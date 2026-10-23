@@ -10,12 +10,14 @@
  * curriculum tree without per-lesson file fetches.
  */
 
+import type { WidgetProps } from '@/engine/registry';
+
 // ─── Widget System ──────────────────────────────────────────────────────────
 
 /**
  * Props for a code-editor widget (interactive sandbox).
  */
-export interface CodeEditorProps {
+export interface CodeEditorProps extends WidgetProps {
   language: string;
   initialCode: string;
   solution?: string;
@@ -25,7 +27,7 @@ export interface CodeEditorProps {
 /**
  * Props for a quiz widget (multiple choice).
  */
-export interface QuizProps {
+export interface QuizProps extends WidgetProps {
   question: string;
   options: { id: string; text: string; isCorrect: boolean }[];
   explanation?: string;
@@ -34,7 +36,7 @@ export interface QuizProps {
 /**
  * Props for a diagram widget (Mermaid-like rendering).
  */
-export interface DiagramProps {
+export interface DiagramProps extends WidgetProps {
   diagramType: 'flowchart' | 'sequence' | 'class' | 'er' | 'custom';
   source: string;
   caption?: string;
@@ -43,7 +45,7 @@ export interface DiagramProps {
 /**
  * Props for an embedded video widget.
  */
-export interface VideoProps {
+export interface VideoProps extends WidgetProps {
   url: string;
   title?: string;
   autoplay?: boolean;
@@ -52,7 +54,7 @@ export interface VideoProps {
 /**
  * Props for a styled note/callout widget.
  */
-export interface NoteProps {
+export interface NoteProps extends WidgetProps {
   variant: 'info' | 'warning' | 'tip' | 'danger';
   title?: string;
   body: string;
@@ -61,7 +63,7 @@ export interface NoteProps {
 /**
  * Props for a callout widget with optional emoji.
  */
-export interface CalloutProps {
+export interface CalloutProps extends WidgetProps {
   emoji?: string;
   title?: string;
   body: string;

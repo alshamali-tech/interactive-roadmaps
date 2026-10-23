@@ -28,10 +28,7 @@ import {
 } from 'lucide-react';
 import type { LessonStatus } from '@/engine/progress';
 import type { WidgetConfig } from '@/curriculum/schema';
-
-// Interactive widgets
-import { QuizWidget } from '@/components/widgets/QuizWidget';
-import { CodeEditorWidget } from '@/components/widgets/CodeEditorWidget';
+import { widgetRegistry } from '@/engine/registry';
 
 /**
  * Lesson route — displays lesson content (markdown + widgets) and completion controls.
@@ -495,12 +492,17 @@ function InlineMarkdown({ text }: { text: string }) {
 // ─── Widget Renderer ────────────────────────────────────────────────────────
 
 function WidgetRenderer({ widget }: { widget: WidgetConfig }) {
-  switch (widget.type) {
-    case 'code-editor':
-      return <CodeEditorWidget {...widget.props} />;
+  // 1. Try the widget registry first — this is the primary lookup path.
+  //    Any widget type registered in `widgetRegistry` will be resolved and rendered here.
+  const RegisteredComponent = widgetRegistry.resolve(widget);
+  if (RegisteredComponent) {
+    return <RegisteredComponent {...widget.props} />;
+  }
 
-    case 'quiz':
-      return <QuizWidget {...widget.props} />;
+  // 2. Fallback: inline renderers for widget types not yet registered.
+  //    These should eventually be extracted into standalone components
+  //    and registered in the widget registry.
+  switch (widget.type) {
 
     case 'diagram':
       return (
