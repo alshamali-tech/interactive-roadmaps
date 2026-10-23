@@ -39,6 +39,17 @@ At its core, every program follows three basic steps:
 This simple model underpins everything from simple scripts to complex distributed systems.
 
 {{widget:quiz-basics}}
+
+## Try It Yourself: Input → Process → Output
+
+Here's a live sandbox. Type anything in the left pane and watch the right pane
+update in real-time. The \`process\` function transforms your input into HTML.
+
+{{widget:sandbox-echo}}
+
+Now try a code-style sandbox — type JavaScript and see it evaluated as text output:
+
+{{widget:sandbox-code}}
 `,
     widgets: [
       {
@@ -63,6 +74,51 @@ This simple model underpins everything from simple scripts to complex distribute
           ],
           explanation:
             'Every program receives input, processes it according to your code, and produces output.',
+        },
+      },
+      {
+        id: 'sandbox-echo',
+        type: 'sandbox',
+        props: {
+          inputType: 'text',
+          outputType: 'html',
+          initialState: 'Hello, Engineer!',
+          label: 'Live Preview: Text → HTML',
+          placeholder: 'Type something and watch it become HTML...',
+          processFunction: `function process(input) {
+  // Reverse the input, uppercase it, and wrap in styled HTML
+  const reversed = input.split('').reverse().join('');
+  return \`
+    <div style="font-family: system-ui, sans-serif;">
+      <h2 style="color: #0066cc; margin: 0 0 8px;">Your input:</h2>
+      <p style="font-size: 18px; background: #f0f4ff; padding: 12px; border-radius: 6px; margin: 0 0 12px;">\${input}</p>
+      <h2 style="color: #0066cc; margin: 0 0 8px;">Reversed:</h2>
+      <p style="font-size: 18px; background: #fff0f4; padding: 12px; border-radius: 6px; margin: 0 0 12px;">\${reversed}</p>
+      <p style="color: #666; font-size: 13px;">Character count: <strong>\${input.length}</strong> | Word count: <strong>\${input.trim().split(/\\s+/).filter(Boolean).length}</strong></p>
+    </div>
+  \`;
+}`,
+        },
+      },
+      {
+        id: 'sandbox-code',
+        type: 'sandbox',
+        props: {
+          inputType: 'code',
+          outputType: 'text',
+          initialState: 'const x = 10;\nconst y = 20;\nreturn x + y;',
+          label: 'JavaScript Evaluator',
+          placeholder: 'Write JavaScript code that returns a value...',
+          processFunction: `function process(input) {
+  // Safely evaluate the code and return the result
+  try {
+    const fn = new Function(input);
+    const result = fn();
+    return 'Result: ' + (result === undefined ? '(no return value — add "return" to your code)' : JSON.stringify(result, null, 2));
+  } catch (err) {
+    return 'Error: ' + err.message;
+  }
+}`,
         },
       },
     ],
@@ -120,6 +176,13 @@ different times. This can lead to surprising behavior:
 \`\`\`
 
 {{widget:quiz-types}}
+
+## Experiment: Type Coercion Sandbox
+
+Play with type coercion live. Change the input and watch JavaScript's
+surprising behavior in real-time:
+
+{{widget:sandbox-coercion}}
 `,
     widgets: [
       {
@@ -156,6 +219,29 @@ different times. This can lead to surprising behavior:
           ],
           explanation:
             'The `+` operator with a string triggers string concatenation. The number 3 is coerced to the string "3".',
+        },
+      },
+      {
+        id: 'sandbox-coercion',
+        type: 'sandbox',
+        props: {
+          inputType: 'code',
+          outputType: 'text',
+          initialState: '"5" + 3',
+          label: 'Type Coercion Lab',
+          placeholder: 'Try: "5" - 3  or  true + 1  or  [] + {}',
+          processFunction: `function process(input) {
+  try {
+    const fn = new Function('return (' + input + ')');
+    const result = fn();
+    return 'Expression:  ' + input +
+           '\\nResult:      ' + String(result) +
+           '\\nType:        ' + typeof result +
+           '\\nJSON:        ' + JSON.stringify(result);
+  } catch (err) {
+    return 'Error: ' + err.message;
+  }
+}`,
         },
       },
     ],

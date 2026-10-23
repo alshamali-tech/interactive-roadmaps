@@ -69,6 +69,48 @@ export interface CalloutProps extends WidgetProps {
   body: string;
 }
 
+/**
+ * Props for a sandbox widget — the universal Input → Process → Output primitive.
+ *
+ * The sandbox provides a split-screen UI where the user types in the input pane
+ * and sees the transformed result in the output pane in real-time.
+ *
+ * The optional `processFunction` is a string of JavaScript that must define a
+ * function `process(input)` returning the output value. If omitted, the sandbox
+ * runs in "echo" mode (output mirrors input verbatim).
+ *
+ * @example
+ * ```ts
+ * {
+ *   inputType: 'text',
+ *   outputType: 'html',
+ *   initialState: 'Hello, World!',
+ *   processFunction: `
+ *     function process(input) {
+ *       return '<h1>' + input + '</h1>';
+ *     }
+ *   `,
+ * }
+ * ```
+ */
+export interface SandboxProps extends WidgetProps {
+  /** Whether the input pane is a plain textarea or a code editor */
+  inputType: 'text' | 'code';
+  /** Whether the output pane renders text or HTML */
+  outputType: 'text' | 'html';
+  /** Initial content of the input pane */
+  initialState: string;
+  /**
+   * Optional JavaScript source string that must define a function
+   * `process(input)` returning the output value. Omit for echo mode.
+   */
+  processFunction?: string;
+  /** Display label shown in the sandbox header */
+  label?: string;
+  /** Placeholder text for the input pane */
+  placeholder?: string;
+}
+
 // ─── Widget Discriminated Union ─────────────────────────────────────────────
 
 export interface CodeEditorWidget {
@@ -107,6 +149,12 @@ export interface CalloutWidget {
   props: CalloutProps;
 }
 
+export interface SandboxWidget {
+  id: string;
+  type: 'sandbox';
+  props: SandboxProps;
+}
+
 /**
  * Discriminated union of all widget configurations.
  * Use `widget.type` to narrow the type at runtime.
@@ -117,7 +165,8 @@ export type WidgetConfig =
   | DiagramWidget
   | VideoWidget
   | NoteWidget
-  | CalloutWidget;
+  | CalloutWidget
+  | SandboxWidget;
 
 // ─── Lesson ─────────────────────────────────────────────────────────────────
 

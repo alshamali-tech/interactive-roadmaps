@@ -12,6 +12,11 @@ import type { ComponentType } from 'react';
 import type { WidgetConfig } from '@/curriculum/schema';
 import { CodeEditorWidget } from '@/components/widgets/CodeEditorWidget';
 import { QuizWidget } from '@/components/widgets/QuizWidget';
+import { Sandbox } from '@/components/universal/Sandbox';
+import { DiagramWidget } from '@/components/widgets/DiagramWidget';
+import { NoteWidget } from '@/components/widgets/NoteWidget';
+import { CalloutWidget } from '@/components/widgets/CalloutWidget';
+import { VideoWidget } from '@/components/widgets/VideoWidget';
 
 // ─── Base Types ──────────────────────────────────────────────────────────────
 
@@ -84,7 +89,10 @@ class WidgetRegistry {
    *   .register('sandbox', SandboxWidget);
    * ```
    */
-  register<P extends WidgetProps>(type: string, component: WidgetComponent<P>): this {
+  register<P extends WidgetProps>(
+    type: string,
+    component: WidgetComponent<P>
+  ): this {
     if (this.components.has(type)) {
       console.warn(
         `[WidgetRegistry] Overwriting existing widget type: "${type}"`
@@ -100,7 +108,9 @@ class WidgetRegistry {
    * @param type - The widget type identifier
    * @returns The component, or `undefined` if nothing is registered for this type
    */
-  get<P extends WidgetProps = WidgetProps>(type: string): WidgetComponent<P> | undefined {
+  get<P extends WidgetProps = WidgetProps>(
+    type: string
+  ): WidgetComponent<P> | undefined {
     return this.components.get(type) as WidgetComponent<P> | undefined;
   }
 
@@ -181,4 +191,9 @@ export const widgetRegistry = new WidgetRegistry();
 // New widget types can be added here or registered externally via `widgetRegistry.register()`.
 widgetRegistry
   .register('code-editor', CodeEditorWidget)
-  .register('quiz', QuizWidget);
+  .register('quiz', QuizWidget)
+  .register('sandbox', Sandbox)
+  .register('diagram', DiagramWidget)
+  .register('note', NoteWidget)
+  .register('callout', CalloutWidget)
+  .register('video', VideoWidget);

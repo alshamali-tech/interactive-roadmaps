@@ -20,15 +20,13 @@ import {
   Clock,
   ChevronRight,
   AlertTriangle,
-  Layout,
-  Video,
-  FileText,
   Tag,
   Sparkles,
 } from 'lucide-react';
 import type { LessonStatus } from '@/engine/progress';
 import type { WidgetConfig } from '@/curriculum/schema';
 import { widgetRegistry } from '@/engine/registry';
+import { InlineMarkdown } from '@/components/utils/InlineMarkdown';
 
 /**
  * Lesson route — displays lesson content (markdown + widgets) and completion controls.
@@ -69,9 +67,11 @@ export function Lesson() {
           <CardContent className="py-12 text-center">
             <AlertTriangle className="size-8 text-destructive mx-auto mb-3" />
             <p className="text-muted-foreground">
-              Lesson "
-              <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{lessonId}</code>"
-              was not found in the curriculum.
+              Lesson &quot;
+              <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                {lessonId}
+              </code>
+              &quot; was not found in the curriculum.
             </p>
           </CardContent>
         </Card>
@@ -86,7 +86,8 @@ export function Lesson() {
   const parentModule = tracks
     .flatMap((t) => t.modules)
     .find((m) => m.lessons.some((l) => l.id === lessonId));
-  const lessonIndex = parentModule?.lessons.findIndex((l) => l.id === lessonId) ?? -1;
+  const lessonIndex =
+    parentModule?.lessons.findIndex((l) => l.id === lessonId) ?? -1;
   const nextLesson = parentModule?.lessons[lessonIndex + 1];
 
   return (
@@ -117,7 +118,9 @@ export function Lesson() {
           </div>
           <CardTitle className="text-2xl">{lesson.title}</CardTitle>
           {lesson.description && (
-            <CardDescription className="text-base">{lesson.description}</CardDescription>
+            <CardDescription className="text-base">
+              {lesson.description}
+            </CardDescription>
           )}
           {/* Tags */}
           <div className="flex flex-wrap gap-1.5 pt-1">
@@ -145,7 +148,9 @@ export function Lesson() {
           {/* Prerequisites */}
           {lesson.prerequisites.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-sm font-medium text-foreground">Prerequisites</h3>
+              <h3 className="text-sm font-medium text-foreground">
+                Prerequisites
+              </h3>
               <div className="flex flex-wrap gap-2">
                 {lesson.prerequisites.map((prereqId) => {
                   const prereqStatus = getLessonStatus(prereqId);
@@ -155,7 +160,11 @@ export function Lesson() {
                   return (
                     <Link
                       key={prereqId}
-                      to={prereqStatus === 'locked' ? '#' : `/lesson/${prereqId}`}
+                      to={
+                        prereqStatus === 'locked'
+                          ? '#'
+                          : `/lesson/${prereqId}`
+                      }
                       className="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 rounded-full px-3 py-1 transition-colors"
                       onClick={(e) => {
                         if (prereqStatus === 'locked') e.preventDefault();
@@ -244,7 +253,10 @@ function MarkdownRenderer({
       const text = paragraphLines.join(' ').trim();
       if (text) {
         elements.push(
-          <p key={`p-${elements.length}`} className="text-foreground leading-7 mb-4">
+          <p
+            key={`p-${elements.length}`}
+            className="text-foreground leading-7 mb-4"
+          >
             <InlineMarkdown text={text} />
           </p>
         );
@@ -291,7 +303,10 @@ function MarkdownRenderer({
       const widget = widgets.find((w) => w.id === widgetId);
       if (widget) {
         elements.push(
-          <WidgetRenderer key={`widget-${elements.length}`} widget={widget} />
+          <WidgetRenderer
+            key={`widget-${elements.length}`}
+            widget={widget}
+          />
         );
       }
       continue;
@@ -393,6 +408,7 @@ function MarkdownRenderer({
           .split('|')
           .slice(1, -1)
           .map((c) => c.trim());
+        // Skip separator rows (e.g., |---|---|)
         if (!row.every((c) => /^[-:]+$/.test(c))) {
           tableRows.push(row);
         }
@@ -401,7 +417,10 @@ function MarkdownRenderer({
       if (tableRows.length > 0) {
         const [header, ...body] = tableRows;
         elements.push(
-          <div key={`table-${elements.length}`} className="overflow-x-auto mb-4">
+          <div
+            key={`table-${elements.length}`}
+            className="overflow-x-auto mb-4"
+          >
             <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
               <thead className="bg-muted/50">
                 <tr>
@@ -422,7 +441,10 @@ function MarkdownRenderer({
                     className="border-b border-border last:border-0"
                   >
                     {row.map((cell, ci) => (
-                      <td key={ci} className="px-3 py-2 text-foreground/90">
+                      <td
+                        key={ci}
+                        className="px-3 py-2 text-foreground/90"
+                      >
                         <InlineMarkdown text={cell} />
                       </td>
                     ))}
@@ -437,7 +459,7 @@ function MarkdownRenderer({
       continue;
     }
 
-    // Regular text
+    // Regular text — accumulate for paragraph
     paragraphLines.push(line);
   }
 
@@ -445,173 +467,26 @@ function MarkdownRenderer({
   return <>{elements}</>;
 }
 
-function InlineMarkdown({ text }: { text: string }) {
-  const parts: ReactNode[] = [];
-  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-
-    if (match[2]) {
-      parts.push(
-        <strong key={match.index} className="font-semibold">
-          {match[2]}
-        </strong>
-      );
-    } else if (match[3]) {
-      parts.push(
-        <em key={match.index} className="italic">
-          {match[3]}
-        </em>
-      );
-    } else if (match[4]) {
-      parts.push(
-        <code
-          key={match.index}
-          className="bg-muted/60 text-foreground/90 rounded px-1.5 py-0.5 text-[0.85em] font-mono"
-        >
-          {match[4]}
-        </code>
-      );
-    }
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  return <>{parts}</>;
-}
-
 // ─── Widget Renderer ────────────────────────────────────────────────────────
 
 function WidgetRenderer({ widget }: { widget: WidgetConfig }) {
-  // 1. Try the widget registry first — this is the primary lookup path.
-  //    Any widget type registered in `widgetRegistry` will be resolved and rendered here.
+  // Look up the component in the widget registry
   const RegisteredComponent = widgetRegistry.resolve(widget);
+
   if (RegisteredComponent) {
     return <RegisteredComponent {...widget.props} />;
   }
 
-  // 2. Fallback: inline renderers for widget types not yet registered.
-  //    These should eventually be extracted into standalone components
-  //    and registered in the widget registry.
-  switch (widget.type) {
-
-    case 'diagram':
-      return (
-        <div className="my-5 rounded-lg border border-border overflow-hidden">
-          <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 border-b border-border">
-            <Layout className="size-4 text-primary" />
-            <span className="text-sm font-medium text-foreground">Diagram</span>
-            <span className="text-xs text-muted-foreground ml-auto">
-              {widget.props.diagramType}
-            </span>
-          </div>
-          <div className="p-4 bg-muted/20 text-center">
-            <pre className="text-xs font-mono text-foreground/60 text-left overflow-x-auto bg-[#1e1e2e] p-4 rounded-md text-[#cdd6f4]">
-              {widget.props.source}
-            </pre>
-            {widget.props.caption && (
-              <p className="text-xs text-muted-foreground mt-3 italic">
-                {widget.props.caption}
-              </p>
-            )}
-          </div>
-        </div>
-      );
-
-    case 'video':
-      return (
-        <div className="my-5 rounded-lg border border-border overflow-hidden">
-          <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 border-b border-border">
-            <Video className="size-4 text-primary" />
-            <span className="text-sm font-medium text-foreground">Video</span>
-          </div>
-          <div className="p-8 bg-muted/20 text-center">
-            <div className="size-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-              <Video className="size-8 text-primary" />
-            </div>
-            <p className="text-sm text-muted-foreground font-medium">
-              {widget.props.title ?? widget.props.url}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Video playback coming soon
-            </p>
-          </div>
-        </div>
-      );
-
-    case 'note': {
-      const noteColors = {
-        info: 'border-blue-300 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20',
-        warning:
-          'border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20',
-        tip: 'border-emerald-300 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20',
-        danger: 'border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20',
-      };
-      const noteIcons = {
-        info: 'ℹ️',
-        warning: '⚠️',
-        tip: '💡',
-        danger: '🚨',
-      };
-      return (
-        <div
-          className={`my-5 rounded-lg border-l-4 p-4 ${noteColors[widget.props.variant]}`}
-        >
-          <div className="flex items-start gap-2">
-            <span className="text-lg shrink-0">{noteIcons[widget.props.variant]}</span>
-            <div>
-              {widget.props.title && (
-                <div className="text-sm font-semibold text-foreground mb-1">
-                  {widget.props.title}
-                </div>
-              )}
-              <p className="text-sm text-foreground/80 leading-relaxed">
-                {widget.props.body}
-              </p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    case 'callout':
-      return (
-        <div className="my-5 rounded-lg border border-border p-4 bg-primary/5">
-          <div className="flex items-start gap-3">
-            {widget.props.emoji && (
-              <span className="text-2xl shrink-0">{widget.props.emoji}</span>
-            )}
-            <div>
-              {widget.props.title && (
-                <h4 className="text-sm font-semibold text-foreground mb-1">
-                  {widget.props.title}
-                </h4>
-              )}
-              <p className="text-sm text-foreground/80 leading-relaxed">
-                {widget.props.body}
-              </p>
-            </div>
-          </div>
-        </div>
-      );
-
-    default:
-      return (
-        <div className="my-5 rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-          <Sparkles className="size-4 mx-auto mb-1" />
-          Unknown widget type
-        </div>
-      );
-  }
+  // Fallback for unregistered widget types
+  return (
+    <div className="my-5 rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+      <Sparkles className="size-4 mx-auto mb-1" />
+      Unknown widget type:{' '}
+      <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+        {widget.type}
+      </code>
+    </div>
+  );
 }
 
 // ─── Badges ─────────────────────────────────────────────────────────────────
@@ -622,7 +497,8 @@ function StatusBadge({ status }: { status: LessonStatus }) {
       variant: 'default' as const,
       icon: CheckCircle2,
       label: 'Completed',
-      className: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+      className:
+        'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     },
     available: {
       variant: 'secondary' as const,
@@ -664,7 +540,8 @@ function DifficultyBadge({
     },
     advanced: {
       label: 'Advanced',
-      className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+      className:
+        'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
     },
   };
   const { label, className } = config[difficulty];
