@@ -17,6 +17,7 @@ import { DiagramWidget } from '@/components/widgets/DiagramWidget';
 import { NoteWidget } from '@/components/widgets/NoteWidget';
 import { CalloutWidget } from '@/components/widgets/CalloutWidget';
 import { VideoWidget } from '@/components/widgets/VideoWidget';
+import { Mutator } from '@/components/universal/Mutator';
 
 // ─── Base Types ──────────────────────────────────────────────────────────────
 
@@ -196,4 +197,5 @@ widgetRegistry
   .register('diagram', DiagramWidget)
   .register('note', NoteWidget)
   .register('callout', CalloutWidget)
-  .register('video', VideoWidget);
+  .register('video', VideoWidget)
+  .register('mutator', Mutator);

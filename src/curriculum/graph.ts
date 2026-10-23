@@ -183,6 +183,13 @@ Play with type coercion live. Change the input and watch JavaScript's
 surprising behavior in real-time:
 
 {{widget:sandbox-coercion}}
+
+## Challenge: Fix the Calculator
+
+Can you spot the bug in this function? The developer meant to create a
+\`multiply\` function, but something is wrong with the operator...
+
+{{widget:mutator-calculator}}
 `,
     widgets: [
       {
@@ -242,6 +249,22 @@ surprising behavior in real-time:
     return 'Error: ' + err.message;
   }
 }`,
+        },
+      },
+      {
+        id: 'mutator-calculator',
+        type: 'mutator',
+        props: {
+          language: 'javascript',
+          title: 'Fix the Multiply Function',
+          brokenCode: 'function multiply(a, b) {\n  return a + b;\n}',
+          testCases: [
+            'multiply(2, 3) => 6',
+            'multiply(0, 5) => 0',
+            'multiply(-1, 4) => -4',
+            'multiply(10, 10) => 100',
+          ],
+          hint: 'Look at the operator inside the function. Is `+` the right operator for multiplication?',
         },
       },
     ],
@@ -308,6 +331,13 @@ while (count < 3) {
 
 Always make sure your loop condition will eventually become false, or you'll create an
 **infinite loop** that crashes your program!
+
+## Challenge: Fix the Even Checker
+
+This function should return \`true\` for even numbers and \`false\` for odd numbers.
+But the logic is backwards — can you debug it?
+
+{{widget:mutator-even}}
 `,
     widgets: [
       {
@@ -338,6 +368,23 @@ Always make sure your loop condition will eventually become false, or you'll cre
           variant: 'danger',
           title: 'Warning: Infinite Loops',
           body: 'If your loop condition never becomes false, your program will freeze or crash. Always double-check that your loop will terminate!',
+        },
+      },
+      {
+        id: 'mutator-even',
+        type: 'mutator',
+        props: {
+          language: 'javascript',
+          title: 'Fix the Even Number Checker',
+          brokenCode: 'function isEven(n) {\n  if (n % 2 === 0) {\n    return false;\n  } else {\n    return true;\n  }\n}',
+          testCases: [
+            'isEven(2) => true',
+            'isEven(3) => false',
+            'isEven(0) => true',
+            'isEven(7) => false',
+            'isEven(100) => true',
+          ],
+          hint: 'If `n % 2 === 0` is true, that means the number IS divisible by 2 — which makes it even, not odd!',
         },
       },
     ],

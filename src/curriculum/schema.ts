@@ -70,6 +70,38 @@ export interface CalloutProps extends WidgetProps {
 }
 
 /**
+ * Props for a mutator widget — the code fixer challenge widget.
+ *
+ * Presents a broken code snippet in a Monaco editor alongside hidden
+ * deterministic tests. The user must identify and fix the bug(s) to
+ * make all tests pass.
+ *
+ * Test cases use the format: `functionCall(arg1, arg2) => expected`
+ *
+ * @example
+ * ```ts
+ * {
+ *   language: 'javascript',
+ *   brokenCode: 'function add(a, b) {\n  return a - b;\n}',
+ *   testCases: ['add(2, 3) => 5', 'add(-1, 1) => 0'],
+ *   hint: 'Look at the operator — is subtraction correct for addition?',
+ * }
+ * ```
+ */
+export interface MutatorProps extends WidgetProps {
+  /** Programming language for the Monaco editor (e.g., 'javascript', 'typescript') */
+  language: string;
+  /** The broken code snippet that the user must fix */
+  brokenCode: string;
+  /** Array of test case strings in the format "functionCall(args) => expected" */
+  testCases: string[];
+  /** A hint to help the user if they're stuck (shown in a collapsible section) */
+  hint: string;
+  /** Optional title displayed in the widget header */
+  title?: string;
+}
+
+/**
  * Props for a sandbox widget — the universal Input → Process → Output primitive.
  *
  * The sandbox provides a split-screen UI where the user types in the input pane
@@ -155,6 +187,12 @@ export interface SandboxWidget {
   props: SandboxProps;
 }
 
+export interface MutatorWidget {
+  id: string;
+  type: 'mutator';
+  props: MutatorProps;
+}
+
 /**
  * Discriminated union of all widget configurations.
  * Use `widget.type` to narrow the type at runtime.
@@ -166,7 +204,8 @@ export type WidgetConfig =
   | VideoWidget
   | NoteWidget
   | CalloutWidget
-  | SandboxWidget;
+  | SandboxWidget
+  | MutatorWidget;
 
 // ─── Lesson ─────────────────────────────────────────────────────────────────
 
