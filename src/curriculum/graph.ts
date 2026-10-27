@@ -338,6 +338,21 @@ This function should return \`true\` for even numbers and \`false\` for odd numb
 But the logic is backwards — can you debug it?
 
 {{widget:mutator-even}}
+
+## Visual Pipelines: Drag-and-Drop Flow
+
+Control flow isn't just for code — it's the foundation of **data pipelines** too.
+
+In the interactive canvas below, you can:
+- **Drag nodes** to rearrange the layout
+- **Connect nodes** by dragging from a colored dot (right side) to another node's dot (left side)
+- **Delete connections** by clicking an edge to select it, then pressing Delete or Backspace
+- Click **Run Pipeline** to validate the graph and watch data flow through it
+
+A valid pipeline must have exactly one Input node, exactly one Output node, no cycles,
+and all nodes reachable from the Input. Try breaking the connections and rebuilding them!
+
+{{widget:pipeline-demo}}
 `,
     widgets: [
       {
@@ -385,6 +400,29 @@ But the logic is backwards — can you debug it?
             'isEven(100) => true',
           ],
           hint: 'If `n % 2 === 0` is true, that means the number IS divisible by 2 — which makes it even, not odd!',
+        },
+      },
+      {
+        id: 'pipeline-demo',
+        type: 'node-graph',
+        props: {
+          title: '🧩 Data Processing Pipeline — Try It!',
+          playground: true,
+          initialNodes: [
+            { id: 'source', type: 'input', position: { x: 0, y: 100 }, label: 'Data Source', description: 'Raw input stream' },
+            { id: 'filter', type: 'process', position: { x: 250, y: 100 }, label: 'Filter', description: 'Remove invalid entries' },
+            { id: 'validator', type: 'condition', position: { x: 500, y: 0 }, label: 'Valid?', description: 'Schema check' },
+            { id: 'transform', type: 'process', position: { x: 750, y: 0 }, label: 'Transform', description: 'Normalize & enrich' },
+            { id: 'error', type: 'process', position: { x: 500, y: 200 }, label: 'Error Log', description: 'Failed records' },
+            { id: 'output', type: 'output', position: { x: 1000, y: 0 }, label: 'Database', description: 'Persist results' },
+          ],
+          initialEdges: [
+            { id: 'e1', source: 'source', target: 'filter', animated: false },
+            { id: 'e2', source: 'filter', target: 'validator', animated: false },
+            { id: 'e3', source: 'validator', target: 'transform', label: 'Yes', animated: false },
+            { id: 'e4', source: 'validator', target: 'error', label: 'No', animated: false },
+            { id: 'e5', source: 'transform', target: 'output', animated: false },
+          ],
         },
       },
     ],

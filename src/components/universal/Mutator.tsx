@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -148,6 +148,7 @@ export function Mutator({
   const [runState, setRunState] = useState<RunState>('idle');
   const [hintExpanded, setHintExpanded] = useState(false);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const testTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const allPassed = useMemo(
     () => results !== null && results.every((r) => r.passed),
@@ -169,8 +170,13 @@ export function Mutator({
     setRunState('running');
     setResults(null);
 
+    // Clear any pending timeout from a previous run
+    if (testTimeoutRef.current !== null) {
+      clearTimeout(testTimeoutRef.current);
+    }
+
     // Simulate a brief delay to show the loading state
-    setTimeout(() => {
+    testTimeoutRef.current = setTimeout(() => {
       const currentCode = editorRef.current?.getValue() ?? code;
       const testResults: TestCaseResult[] = [];
 
@@ -221,10 +227,15 @@ export function Mutator({
 
       setResults(testResults);
       setRunState('done');
+      testTimeoutRef.current = null;
     }, 1200);
   }, [code, testCases, runState]);
 
   const resetCode = useCallback(() => {
+    if (testTimeoutRef.current !== null) {
+      clearTimeout(testTimeoutRef.current);
+      testTimeoutRef.current = null;
+    }
     setCode(brokenCode);
     if (editorRef.current) {
       editorRef.current.setValue(brokenCode);
@@ -232,6 +243,15 @@ export function Mutator({
     setResults(null);
     setRunState('idle');
   }, [brokenCode]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (testTimeoutRef.current !== null) {
+        clearTimeout(testTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleCodeChange = useCallback((value: string | undefined) => {
     setCode(value ?? '');
