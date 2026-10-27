@@ -245,6 +245,33 @@ export function NodeGraph({
     edgesRef.current = edges;
   }, [edges]);
 
+  // ─── Keyboard Delete Handler (document-level for reliable capture) ─────
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const target = e.target as HTMLElement;
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest('[role="textbox"]') ||
+          target.closest('.monaco-editor')
+        ) {
+          return;
+        }
+        const hasSelected = edgesRef.current.some((edge) => edge.selected);
+        if (hasSelected) {
+          e.preventDefault();
+          setEdges((eds) => eds.filter((edge) => !edge.selected));
+          setRunResult(null);
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [setEdges]);
+
   // ─── Connection Handler ─────────────────────────────────────────────────
 
   const onConnect = useCallback(
@@ -269,21 +296,44 @@ export function NodeGraph({
 
   const onNodeClick: NodeMouseHandler<Node<CustomNodeData>> = useCallback(() => {
     // Deselect edges when clicking a node
-    setEdges((eds) => eds.map((e) => ({ ...e, selected: false })));
+    setEdges((eds) =>
+      eds.map((e) => ({
+        ...e,
+        selected: false,
+        style: { ...e.style, stroke: '#64748b', strokeWidth: 2 },
+      }))
+    );
   }, [setEdges]);
 
   const onEdgeClick: EdgeMouseHandler = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
       event.stopPropagation();
       setEdges((eds) =>
-        eds.map((e) => ({ ...e, selected: e.id === edge.id ? !e.selected : false }))
+        eds.map((e) => {
+          const isSelected = e.id === edge.id ? !e.selected : false;
+          return {
+            ...e,
+            selected: isSelected,
+            style: {
+              ...e.style,
+              stroke: isSelected ? '#3b82f6' : '#64748b',
+              strokeWidth: isSelected ? 3 : 2,
+            },
+          };
+        })
       );
     },
     [setEdges]
   );
 
   const onPaneClick = useCallback(() => {
-    setEdges((eds) => eds.map((e) => ({ ...e, selected: false })));
+    setEdges((eds) =>
+      eds.map((e) => ({
+        ...e,
+        selected: false,
+        style: { ...e.style, stroke: '#64748b', strokeWidth: 2 },
+      }))
+    );
   }, [setEdges]);
 
   // ─── Add Node (Playground Mode) ─────────────────────────────────────────
@@ -563,6 +613,9 @@ export function NodeGraph({
           onEdgeClick={onEdgeClick}
           onPaneClick={onPaneClick}
           nodeTypes={nodeTypes}
+          selectionKeyCode="Shift"
+          multiSelectionKeyCode="Shift"
+          deleteKeyCode="Delete"
           fitView
           minZoom={0.3}
           maxZoom={2}
