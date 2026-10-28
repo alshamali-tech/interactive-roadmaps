@@ -19,6 +19,7 @@ import { CalloutWidget } from '@/components/widgets/CalloutWidget';
 import { VideoWidget } from '@/components/widgets/VideoWidget';
 import { Mutator } from '@/components/universal/Mutator';
 import { NodeGraph } from '@/components/universal/NodeGraph';
+import { TradeOff } from '@/components/universal/TradeOff';
 
 // ─── Base Types ──────────────────────────────────────────────────────────────
 
@@ -200,4 +201,5 @@ widgetRegistry
   .register('callout', CalloutWidget)
   .register('video', VideoWidget)
   .register('mutator', Mutator)
-  .register('node-graph', NodeGraph);
+  .register('node-graph', NodeGraph)
+  .register('trade-off', TradeOff);

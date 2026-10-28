@@ -198,6 +198,65 @@ export interface SandboxProps extends WidgetProps {
   placeholder?: string;
 }
 
+/**
+ * A single option within a TradeOff decision matrix.
+ *
+ * Each option represents a technology, approach, or solution that the
+ * user can evaluate against the others.
+ */
+export interface TradeOffOption {
+  /** Unique identifier for this option */
+  id: string;
+  /** Display name (e.g., "PostgreSQL", "Cassandra") */
+  name: string;
+  /** Brief one-line description of the option */
+  description: string;
+  /** Array of advantages / positive aspects */
+  pros: string[];
+  /** Array of disadvantages / negative aspects */
+  cons: string[];
+  /** Quantitative metrics on a 1–10 scale */
+  metrics: {
+    /** Cost (1 = cheap, 10 = expensive) */
+    cost: number;
+    /** Performance (1 = slow, 10 = fast) */
+    performance: number;
+    /** Complexity (1 = simple, 10 = complex) */
+    complexity: number;
+    /** Scalability (1 = limited, 10 = highly scalable) */
+    scalability: number;
+  };
+}
+
+/**
+ * Props for a trade-off widget — the decision matrix that teaches
+ * engineering trade-offs.
+ *
+ * Presents a real-world scenario and a set of clickable option cards.
+ * Upon selection the widget reveals pros/cons, a metrics comparison
+ * table, and a recharts RadarChart overlay.
+ *
+ * @example
+ * ```ts
+ * {
+ *   scenario: 'You need a database for 100k writes/sec. Choose wisely.',
+ *   options: [
+ *     { id: 'pg', name: 'PostgreSQL', description: '...', pros: [...], cons: [...], metrics: {...} },
+ *     { id: 'cass', name: 'Cassandra', description: '...', pros: [...], cons: [...], metrics: {...} },
+ *   ],
+ *   explanation: 'For write-heavy workloads, Cassandra is typically the best choice.',
+ * }
+ * ```
+ */
+export interface TradeOffProps extends WidgetProps {
+  /** The question / context presented to the user */
+  scenario: string;
+  /** Array of choices (minimum 2, maximum 5 — extras are truncated) */
+  options: TradeOffOption[];
+  /** Optional explanation shown below the chart after selection */
+  explanation?: string;
+}
+
 // ─── Widget Discriminated Union ─────────────────────────────────────────────
 
 export interface CodeEditorWidget {
@@ -254,6 +313,12 @@ export interface NodeGraphWidget {
   props: NodeGraphProps;
 }
 
+export interface TradeOffWidget {
+  id: string;
+  type: 'trade-off';
+  props: TradeOffProps;
+}
+
 /**
  * Discriminated union of all widget configurations.
  * Use `widget.type` to narrow the type at runtime.
@@ -267,7 +332,8 @@ export type WidgetConfig =
   | CalloutWidget
   | SandboxWidget
   | MutatorWidget
-  | NodeGraphWidget;
+  | NodeGraphWidget
+  | TradeOffWidget;
 
 // ─── Lesson ─────────────────────────────────────────────────────────────────
 

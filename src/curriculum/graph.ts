@@ -353,6 +353,14 @@ A valid pipeline must have exactly one Input node, exactly one Output node, no c
 and all nodes reachable from the Input. Try breaking the connections and rebuilding them!
 
 {{widget:pipeline-demo}}
+
+## Engineering Decisions: Choosing a Cache Strategy
+
+Every engineering decision involves **trade-offs**. Let's practice with a real-world
+scenario: you need to cache API responses to improve performance. Which caching
+solution do you choose?
+
+{{widget:tradeoff-cache}}
 `,
     widgets: [
       {
@@ -423,6 +431,67 @@ and all nodes reachable from the Input. Try breaking the connections and rebuild
             { id: 'e4', source: 'validator', target: 'error', label: 'No', animated: false },
             { id: 'e5', source: 'transform', target: 'output', animated: false },
           ],
+        },
+      },
+      {
+        id: 'tradeoff-cache',
+        type: 'trade-off',
+        props: {
+          scenario: 'You need to cache API responses to improve performance. Which caching solution do you choose?',
+          options: [
+            {
+              id: 'redis',
+              name: 'Redis',
+              description: 'In-memory data store with rich data structures',
+              pros: [
+                'Extremely fast (sub-millisecond latency)',
+                'Supports complex data types (lists, sets, hashes)',
+                'Built-in persistence and replication',
+                'Large ecosystem and community',
+              ],
+              cons: [
+                'Memory-bound (expensive at scale)',
+                'Single-threaded (limits throughput)',
+                'Requires separate infrastructure',
+              ],
+              metrics: { cost: 6, performance: 9, complexity: 5, scalability: 7 },
+            },
+            {
+              id: 'memcached',
+              name: 'Memcached',
+              description: 'Simple distributed memory caching system',
+              pros: [
+                'Multi-threaded (higher throughput)',
+                'Simple and battle-tested',
+                'Easy horizontal scaling',
+              ],
+              cons: [
+                'Only supports simple key-value strings',
+                'No persistence (data lost on restart)',
+                'Limited to 250 bytes per key',
+              ],
+              metrics: { cost: 5, performance: 8, complexity: 3, scalability: 8 },
+            },
+            {
+              id: 'in-memory',
+              name: 'In-Memory (Node Map)',
+              description: 'Application-level caching with Map or LRU cache',
+              pros: [
+                'Zero infrastructure overhead',
+                'Fastest possible access (no network)',
+                'Full control over eviction policy',
+              ],
+              cons: [
+                'Not shared across instances',
+                'Lost on restart',
+                'Memory pressure on app server',
+                'Cache stampedes on cold start',
+              ],
+              metrics: { cost: 1, performance: 10, complexity: 2, scalability: 2 },
+            },
+          ],
+          explanation:
+            'For most production systems, Redis is the best default choice due to its flexibility and features. Memcached shines when you need maximum throughput for simple key-value lookups. In-memory caching is great for single-instance apps or as a first-level cache in a multi-tier strategy.',
         },
       },
     ],
