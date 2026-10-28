@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect, beforeEach } from 'vitest';
-import { useSettingsStore } from './settings';
+import { useSettingsStore, isAIConnected } from './settings';
 
 describe('Settings Store', () => {
   beforeEach(() => {
@@ -65,5 +65,13 @@ describe('Settings Store', () => {
     expect(state.provider).toBe('openai');
     expect(state.apiKey).toBe('sk-test');
     expect(state.baseUrl).toBe('http://localhost:11434/v1');
+  });
+
+  it('standalone isAIConnected function works correctly', () => {
+    expect(isAIConnected({ provider: 'none', apiKey: '', baseUrl: '', model: '' })).toBe(false);
+    expect(isAIConnected({ provider: 'openai', apiKey: 'sk-test', baseUrl: '', model: 'gpt-4o-mini' })).toBe(true);
+    expect(isAIConnected({ provider: 'groq', apiKey: 'gsk_test', baseUrl: '', model: 'llama-3.1-8b-instant' })).toBe(true);
+    expect(isAIConnected({ provider: 'ollama', apiKey: '', baseUrl: 'http://localhost:11434/v1', model: 'llama3' })).toBe(true);
+    expect(isAIConnected({ provider: 'openai', apiKey: '', baseUrl: '', model: 'gpt-4o-mini' })).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
-﻿import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SettingsModal } from './SettingsModal';
 import { useSettingsStore } from '@/engine/settings';
@@ -51,7 +51,7 @@ describe('SettingsModal', () => {
     await user.click(localTab);
 
     expect(screen.getByText('Base URL')).toBeInTheDocument();
-    expect(screen.getByText('🔌 Test Connection')).toBeInTheDocument();
+    expect(screen.getByText(/Test Connection/i)).toBeInTheDocument();
   });
 
   it('does not render when open is false', () => {
@@ -61,12 +61,12 @@ describe('SettingsModal', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('Close button closes the modal', async () => {
+  it('Cancel button closes the modal', async () => {
     const user = userEvent.setup();
     let closed = false;
     render(<SettingsModal open={true} onClose={() => { closed = true; }} />);
 
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(closed).toBe(true);
   });
 
@@ -84,9 +84,65 @@ describe('SettingsModal', () => {
     let closed = false;
     render(<SettingsModal open={true} onClose={() => { closed = true; }} />);
 
-    // Click the backdrop (the outermost dialog element)
     const backdrop = screen.getByRole('dialog');
     await user.click(backdrop);
     expect(closed).toBe(true);
+  });
+
+  it('Save button is disabled when cloud provider fields are empty', () => {
+    render(<SettingsModal open={true} onClose={() => {}} />);
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
+    expect(saveButton).toBeDisabled();
+  });
+
+  it('Save button is enabled when cloud provider fields are filled', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    const openaiRadio = screen.getByDisplayValue('openai');
+    await user.click(openaiRadio);
+
+    const apiKeyInput = screen.getByLabelText('API Key');
+    await user.type(apiKeyInput, 'sk-test-key');
+
+    const modelInput = screen.getByLabelText('Model');
+    await user.type(modelInput, 'gpt-4o-mini');
+
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
+    expect(saveButton).not.toBeDisabled();
+  });
+
+  it('Save button is disabled when Ollama fields are empty', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    const localTab = screen.getByRole('tab', { name: /Local Ollama/i });
+    await user.click(localTab);
+
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
+    expect(saveButton).toBeDisabled();
+  });
+
+  it('saves settings to the store when Save is clicked', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    const groqRadio = screen.getByDisplayValue('groq');
+    await user.click(groqRadio);
+
+    const apiKeyInput = screen.getByLabelText('API Key');
+    fireEvent.change(apiKeyInput, { target: { value: 'gsk_test123' } });
+
+    const modelInput = screen.getByLabelText('Model');
+    fireEvent.change(modelInput, { target: { value: 'llama-3.1-8b-instant' } });
+
+    const saveButton = screen.getByRole('button', { name: 'Save Settings' });
+    await user.click(saveButton);
+
+    const storeState = useSettingsStore.getState();
+    expect(storeState.aiSettings.provider).toBe('groq');
+    expect(storeState.aiSettings.apiKey).toBe('gsk_test123');
+    expect(storeState.aiSettings.model).toBe('llama-3.1-8b-instant');
+    expect(storeState.isAIConnected).toBe(true);
   });
 });

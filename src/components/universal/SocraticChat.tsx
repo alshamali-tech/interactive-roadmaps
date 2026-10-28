@@ -17,14 +17,24 @@ interface SocraticChatProps {
   context?: string;
   lessonId?: string;
   lessonTitle?: string;
+  lessonDescription?: string;
+  lessonContent?: string;
+  moduleName?: string;
+  tags?: string[];
   placeholder?: string;
+  variant?: 'card' | 'panel';
 }
 
 export function SocraticChat({
   context = 'global',
   lessonId,
   lessonTitle,
+  lessonDescription,
+  lessonContent,
+  moduleName,
+  tags,
   placeholder,
+  variant = 'card',
 }: SocraticChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -123,25 +133,29 @@ export function SocraticChat({
     abortRef.current = controller;
 
     try {
-      // Build messages with optional lesson context injected into first user message
-      const aiMessages: AIServiceMessage[] = updatedMessages.map((m, i) => {
-        if (
-          i === updatedMessages.length - 1 &&
-          m.role === 'user' &&
-          lessonTitle
-        ) {
-          return {
-            role: 'user',
-            content: `[Current lesson: "${lessonTitle}"${lessonId ? ` (id: ${lessonId})` : ''}]\n\n${m.content}`,
-          };
-        }
-        return { role: m.role, content: m.content };
-      });
+      // Build lesson context for the AI
+      const lessonContext = lessonTitle
+        ? {
+            title: lessonTitle,
+            description: lessonDescription,
+            content: lessonContent,
+            module: moduleName,
+            tags: tags,
+            id: lessonId,
+          }
+        : undefined;
+
+      // Convert chat messages to AI service format
+      const aiMessages: AIServiceMessage[] = updatedMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
 
       const response = await streamChatCompletion(
         aiMessages,
         aiSettings,
-        controller.signal
+        controller.signal,
+        lessonContext
       );
 
       if (!response.body) {
@@ -226,7 +240,13 @@ export function SocraticChat({
   };
 
   return (
-    <div className="my-6 rounded-lg border border-border overflow-hidden bg-card shadow-sm">
+    <div
+      className={cn(
+        variant === 'card'
+          ? 'my-6 rounded-lg border border-border overflow-hidden bg-card shadow-sm'
+          : 'h-full flex flex-col bg-card'
+      )}
+    >
       {/* No AI Connected Banner */}
       {!aiConnected && (
         <div className="bg-yellow-50 dark:bg-yellow-950/30 border-b border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200 text-xs p-2 px-4">
@@ -235,44 +255,49 @@ export function SocraticChat({
         </div>
       )}
 
-      {/* Chat Header */}
-      <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 border-b border-border">
-        <GraduationCap className="size-4 text-primary" />
-        <span className="text-sm font-semibold text-foreground">AI Tutor</span>
-        {lessonTitle && (
-          <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-            · {lessonTitle}
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          {messages.length > 0 && (
-            <button
-              onClick={clearConversation}
-              disabled={isLoading}
-              aria-label="Clear conversation"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-muted disabled:opacity-50"
-            >
-              <Trash2 className="size-3" />
-              Clear
-            </button>
+      {/* Chat Header - Only show in card variant */}
+      {variant === 'card' && (
+        <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 border-b border-border">
+          <GraduationCap className="size-4 text-primary" />
+          <span className="text-sm font-semibold text-foreground">AI Tutor</span>
+          {lessonTitle && (
+            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+              · {lessonTitle}
+            </span>
           )}
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span
-              className={cn(
-                'size-2 rounded-full',
-                aiConnected ? 'bg-green-500' : 'bg-yellow-400'
-              )}
-            />
-            {aiConnected ? 'Connected' : 'Connect AI in Settings'}
-          </span>
+          <div className="ml-auto flex items-center gap-2">
+            {messages.length > 0 && (
+              <button
+                onClick={clearConversation}
+                disabled={isLoading}
+                aria-label="Clear conversation"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-muted disabled:opacity-50"
+              >
+                <Trash2 className="size-3" />
+                Clear
+              </button>
+            )}
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  'size-2 rounded-full',
+                  aiConnected ? 'bg-green-500' : 'bg-yellow-400'
+                )}
+              />
+              {aiConnected ? 'Connected' : 'Connect AI in Settings'}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Message History */}
       <div
         role="log"
         aria-live="polite"
-        className="h-[300px] overflow-y-auto p-4 flex flex-col gap-3 bg-background"
+        className={cn(
+          'overflow-y-auto p-4 flex flex-col gap-3 bg-background',
+          variant === 'card' ? 'h-[300px]' : 'flex-1'
+        )}
       >
         {messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 text-muted-foreground">
@@ -317,6 +342,17 @@ export function SocraticChat({
 
       {/* Prompt Pills + Input */}
       <div className="border-t border-border p-3 bg-card">
+        {messages.length > 0 && variant === 'panel' && (
+          <button
+            onClick={clearConversation}
+            disabled={isLoading}
+            aria-label="Clear conversation"
+            className="mb-2 text-xs text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-muted disabled:opacity-50"
+          >
+            <Trash2 className="size-3" />
+            Clear conversation
+          </button>
+        )}
         <div className="flex gap-2 overflow-x-auto pb-2 mb-2">
           {prompts.map((p) => (
             <button

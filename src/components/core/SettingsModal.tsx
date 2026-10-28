@@ -1,407 +1,492 @@
-﻿import { useState, useEffect } from 'react';
-import { Settings, Eye, EyeOff, X, CheckCircle, AlertCircle } from 'lucide-react';
-import { useSettingsStore, type AIProvider } from '@/engine/settings';
-import { cn } from '@/lib/utils';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  Eye,
+  EyeOff,
+  X,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  ExternalLink,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  useSettingsStore,
+  type AIProvider,
+} from '@/engine/settings';
 
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
 }
 
+type Tab = 'cloud' | 'ollama';
+
+interface Draft {
+  provider: AIProvider;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const { aiSettings, updateSettings, isAIConnected } = useSettingsStore();
-  const [activeTab, setActiveTab] = useState<'cloud' | 'local'>(
-    aiSettings.provider === 'ollama' ? 'local' : 'cloud'
-  );
+  const aiSettings = useSettingsStore((s) => s.aiSettings);
+  const updateSettings = useSettingsStore((s) => s.updateSettings);
+
+  const [tab, setTab] = useState<Tab>('cloud');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [ollamaTestStatus, setOllamaTestStatus] = useState<
+  const [draft, setDraft] = useState<Draft>({ ...aiSettings });
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const [testStatus, setTestStatus] = useState<
     'idle' | 'testing' | 'success' | 'error'
   >('idle');
+  const [testError, setTestError] = useState('');
 
-  // Sync tab when modal opens with different provider
+  const firstInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset draft state when modal opens
   useEffect(() => {
     if (open) {
-      setActiveTab(aiSettings.provider === 'ollama' ? 'local' : 'cloud');
+      setDraft({ ...aiSettings });
+      setErrors([]);
+      setTestStatus('idle');
+      setTestError('');
+      setShowApiKey(false);
+      // Auto-select tab based on current provider
+      const initialTab = aiSettings.provider === 'ollama' ? 'ollama' : 'cloud';
+      setTab(initialTab);
     }
-  }, [open, aiSettings.provider]);
+  }, [open, aiSettings]);
 
-  // Listen for Escape key
+  // Handle Escape key to close modal
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
+
+  const updateDraft = useCallback((partial: Partial<Draft>) => {
+    setDraft((prev) => ({ ...prev, ...partial }));
+  }, []);
+
+  const handleTabChange = useCallback(
+    (newTab: Tab) => {
+      setTab(newTab);
+      setErrors([]); // Clear errors when switching tabs
+      if (newTab === 'cloud') {
+        // Switching to cloud: if current provider is ollama or none, default to openai
+        if (draft.provider === 'ollama' || draft.provider === 'none') {
+          updateDraft({ provider: 'openai' });
+        }
+      } else {
+        // Switching to ollama tab
+        updateDraft({ provider: 'ollama' });
+      }
+    },
+    [draft.provider, updateDraft]
+  );
+
+  const isValid = useCallback((d: Draft): boolean => {
+    if (d.provider === 'none') return false;
+    if (d.provider === 'openai' || d.provider === 'groq') {
+      return d.apiKey.trim() !== '' && d.model.trim() !== '';
+    }
+    if (d.provider === 'ollama') {
+      return d.baseUrl.trim() !== '' && d.model.trim() !== '';
+    }
+    return false;
+  }, []);
+
+  const handleSave = () => {
+    if (!isValid(draft)) {
+      const errs: string[] = [];
+      if (draft.provider === 'none') errs.push('Please select a provider.');
+      if (
+        (draft.provider === 'openai' || draft.provider === 'groq') &&
+        draft.apiKey.trim() === ''
+      ) {
+        errs.push('API Key is required.');
+      }
+      if (draft.provider === 'ollama' && draft.baseUrl.trim() === '') {
+        errs.push('Base URL is required.');
+      }
+      if (draft.model.trim() === '') errs.push('Model name is required.');
+      setErrors(errs);
+      return;
+    }
+    setErrors([]);
+    updateSettings(draft);
+    onClose();
+  };
+
+  const handleTestConnection = async () => {
+    if (draft.baseUrl.trim() === '') return;
+    setTestStatus('testing');
+    setTestError('');
+    try {
+      // Test the OpenAI-compatible /models endpoint (matches what chat uses)
+      const url = draft.baseUrl.replace(/\/+$/, '') + '/models';
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      if (res.ok) {
+        setTestStatus('success');
+      } else {
+        setTestStatus('error');
+        setTestError(
+          'Ollama returned ' + res.status + ': ' + (await res.text())
+        );
+      }
+    } catch {
+      setTestStatus('error');
+      setTestError(
+        'Cannot reach Ollama at ' +
+          draft.baseUrl +
+          '. Make sure Ollama is running and CORS is enabled. ' +
+          'Try running in PowerShell: $env:OLLAMA_ORIGINS="*"; ollama serve'
+      );
+    }
+  };
 
   if (!open) return null;
 
-  const handleProviderChange = (provider: AIProvider) => {
-    updateSettings({ provider });
-  };
-
-  const handleTabChange = (tab: 'cloud' | 'local') => {
-    setActiveTab(tab);
-    setOllamaTestStatus('idle'); // Reset test status on tab switch
-    if (tab === 'local' && aiSettings.provider !== 'ollama') {
-      updateSettings({ provider: 'ollama' });
-    }
-  };
-
-  const handleTestOllama = async () => {
-    setOllamaTestStatus('testing');
-    try {
-      const response = await fetch(
-        aiSettings.baseUrl.replace('/v1', '') + '/api/tags',
-        { method: 'GET' }
-      );
-      setOllamaTestStatus(response.ok ? 'success' : 'error');
-    } catch {
-      setOllamaTestStatus('error');
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="settings-title"
-    >
+  const modalContent = (
+    <>
+      {/* Backdrop */}
       <div
-        className="relative w-full max-w-2xl mx-4 bg-card rounded-lg shadow-xl max-h-[90vh] overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* Modal Container - Using Portal to avoid stacking context issues */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="AI Provider Settings"
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        onClick={onClose}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Settings className="size-5 text-primary" />
-            <h2
-              id="settings-title"
-              className="text-lg font-semibold text-foreground"
-            >
+        <div
+          className="w-full max-w-lg rounded-xl border border-border bg-card shadow-2xl max-h-[90vh] flex flex-col overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border px-6 py-4 shrink-0">
+            <h2 className="text-lg font-semibold text-foreground">
               AI Provider Settings
             </h2>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close settings"
-            className="p-1 rounded hover:bg-muted transition-colors"
-          >
-            <X className="size-5" />
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div role="tablist" className="flex border-b border-border">
-          <button
-            role="tab"
-            aria-selected={activeTab === 'cloud'}
-            aria-controls="panel-cloud"
-            id="tab-cloud"
-            onClick={() => handleTabChange('cloud')}
-            className={cn(
-              'flex-1 px-4 py-3 text-sm font-medium transition-colors',
-              activeTab === 'cloud'
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Cloud Providers
-          </button>
-          <button
-            role="tab"
-            aria-selected={activeTab === 'local'}
-            aria-controls="panel-local"
-            id="tab-local"
-            onClick={() => handleTabChange('local')}
-            className={cn(
-              'flex-1 px-4 py-3 text-sm font-medium transition-colors',
-              activeTab === 'local'
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Local Ollama
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {activeTab === 'cloud' ? (
-            <div
-              role="tabpanel"
-              id="panel-cloud"
-              aria-labelledby="tab-cloud"
-              className="space-y-6"
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              aria-label="Close"
             >
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Provider
-                </label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="provider"
-                      value="openai"
-                      checked={aiSettings.provider === 'openai'}
-                      onChange={() => handleProviderChange('openai')}
-                      className="w-4 h-4 text-primary"
-                    />
-                    <span className="text-sm">OpenAI</span>
+              <X className="size-4" />
+            </Button>
+          </div>
+
+          {/* Tabs - VISIBLE TAB NAVIGATION */}
+          <div className="flex border-b border-border px-6 shrink-0" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'cloud'}
+              aria-controls="panel-cloud"
+              onClick={() => handleTabChange('cloud')}
+              className={
+                'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ' +
+                (tab === 'cloud'
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground')
+              }
+            >
+              Cloud Providers
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'ollama'}
+              aria-controls="panel-ollama"
+              onClick={() => handleTabChange('ollama')}
+              className={
+                'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ' +
+                (tab === 'ollama'
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground')
+              }
+            >
+              Local Ollama
+            </button>
+          </div>
+
+          {/* Content - Scrollable area */}
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+            {/* Cloud Providers Tab */}
+            {tab === 'cloud' && (
+              <div id="panel-cloud" role="tabpanel" className="space-y-5">
+                {/* Provider Radio Group */}
+                <fieldset>
+                  <legend className="block text-sm font-medium text-foreground mb-2">
+                    Provider
+                  </legend>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2.5 text-sm text-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1.5 -mx-2 transition-colors">
+                      <input
+                        ref={firstInputRef}
+                        type="radio"
+                        name="provider"
+                        value="openai"
+                        checked={draft.provider === 'openai'}
+                        onChange={() => updateDraft({ provider: 'openai' })}
+                        className="accent-primary size-4"
+                      />
+                      <span>OpenAI</span>
+                    </label>
+                    <label className="flex items-center gap-2.5 text-sm text-foreground cursor-pointer hover:bg-muted/50 rounded px-2 py-1.5 -mx-2 transition-colors">
+                      <input
+                        type="radio"
+                        name="provider"
+                        value="groq"
+                        checked={draft.provider === 'groq'}
+                        onChange={() => updateDraft({ provider: 'groq' })}
+                        className="accent-primary size-4"
+                      />
+                      <span>Groq</span>
+                    </label>
+                  </div>
+                </fieldset>
+
+                {/* API Key */}
+                <div>
+                  <label
+                    htmlFor="apiKey"
+                    className="block text-sm font-medium text-foreground mb-1.5"
+                  >
+                    API Key
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <div className="relative">
                     <input
-                      type="radio"
-                      name="provider"
-                      value="groq"
-                      checked={aiSettings.provider === 'groq'}
-                      onChange={() => handleProviderChange('groq')}
-                      className="w-4 h-4 text-primary"
+                      id="apiKey"
+                      type={showApiKey ? 'text' : 'password'}
+                      value={draft.apiKey}
+                      onChange={(e) => updateDraft({ apiKey: e.target.value })}
+                      placeholder={
+                        draft.provider === 'groq' ? 'gsk_...' : 'sk-...'
+                      }
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/50"
+                      autoComplete="off"
                     />
-                    <span className="text-sm">Groq</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey((v) => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                    >
+                      {showApiKey ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Your API key is stored securely in your browser's local
+                    storage. We never send it to our servers.
+                  </p>
+                </div>
+
+                {/* Model */}
+                <div>
+                  <label
+                    htmlFor="cloud-model"
+                    className="block text-sm font-medium text-foreground mb-1.5"
+                  >
+                    Model
                   </label>
+                  <input
+                    id="cloud-model"
+                    type="text"
+                    value={draft.model}
+                    onChange={(e) => updateDraft({ model: e.target.value })}
+                    placeholder={
+                      draft.provider === 'groq'
+                        ? 'llama-3.1-8b-instant'
+                        : 'gpt-4o-mini'
+                    }
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/50"
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    {draft.provider === 'groq' ? (
+                      <a
+                        href="https://console.groq.com/docs/models"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        View Groq models
+                        <ExternalLink className="size-3" />
+                      </a>
+                    ) : (
+                      <a
+                        href="https://platform.openai.com/docs/models"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        View OpenAI models
+                        <ExternalLink className="size-3" />
+                      </a>
+                    )}
+                  </p>
                 </div>
               </div>
+            )}
 
-              <div>
-                <label
-                  htmlFor="api-key"
-                  className="block text-sm font-medium text-foreground mb-2"
-                >
-                  API Key
-                </label>
-                <div className="relative">
+            {/* Local Ollama Tab */}
+            {tab === 'ollama' && (
+              <div id="panel-ollama" role="tabpanel" className="space-y-5">
+                {/* Base URL */}
+                <div>
+                  <label
+                    htmlFor="baseUrl"
+                    className="block text-sm font-medium text-foreground mb-1.5"
+                  >
+                    Base URL
+                  </label>
                   <input
-                    id="api-key"
-                    type={showApiKey ? 'text' : 'password'}
-                    value={aiSettings.apiKey}
-                    onChange={(e) => updateSettings({ apiKey: e.target.value })}
-                    placeholder="sk-..."
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="w-full px-3 py-2 pr-10 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    ref={firstInputRef}
+                    id="baseUrl"
+                    type="text"
+                    value={draft.baseUrl}
+                    onChange={(e) => updateDraft({ baseUrl: e.target.value })}
+                    placeholder="http://localhost:11434/v1"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/50"
                   />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Default:{' '}
+                    <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
+                      http://localhost:11434/v1
+                    </code>
+                  </p>
+                </div>
+
+                {/* Model - OLLAMA MODEL INPUT */}
+                <div>
+                  <label
+                    htmlFor="ollama-model"
+                    className="block text-sm font-medium text-foreground mb-1.5"
+                  >
+                    Model
+                  </label>
+                  <input
+                    id="ollama-model"
+                    type="text"
+                    value={draft.model}
+                    onChange={(e) => updateDraft({ model: e.target.value })}
+                    placeholder="llama3, qwen2.5, mistral, etc."
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/50"
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Enter the name of the model you've pulled in Ollama
+                  </p>
+                </div>
+
+                {/* Test Connection */}
+                <div>
                   <button
                     type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
+                    onClick={handleTestConnection}
+                    disabled={
+                      testStatus === 'testing' || draft.baseUrl.trim() === ''
+                    }
+                    className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3.5 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {showApiKey ? (
-                      <EyeOff className="size-4" />
+                    {testStatus === 'testing' ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" />
+                        Testing...
+                      </>
                     ) : (
-                      <Eye className="size-4" />
+                      <>Test Connection</>
                     )}
                   </button>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Your API key is stored securely in your browser's local
-                  storage. We never send it to our servers.
-                </p>
-              </div>
 
-              <div>
-                <label
-                  htmlFor="model"
-                  className="block text-sm font-medium text-foreground mb-2"
-                >
-                  Model
-                </label>
-                <input
-                  id="model"
-                  type="text"
-                  value={aiSettings.model}
-                  onChange={(e) => updateSettings({ model: e.target.value })}
-                  placeholder={
-                    aiSettings.provider === 'openai'
-                      ? 'gpt-4o-mini'
-                      : 'llama-3.1-8b-instant'
-                  }
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {aiSettings.provider === 'openai' && (
-                    <a
-                      href="https://platform.openai.com/docs/models"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      View OpenAI model documentation
-                    </a>
-                  )}
-                  {aiSettings.provider === 'groq' && (
-                    <a
-                      href="https://console.groq.com/docs/models"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      View Groq model documentation
-                    </a>
-                  )}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div
-              role="tabpanel"
-              id="panel-local"
-              aria-labelledby="tab-local"
-              className="space-y-6"
-            >
-              <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="size-5 text-primary" />
-                  <span className="text-sm font-medium text-foreground">
-                    Local Ollama selected
-                  </span>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Ollama runs AI models entirely on your machine. No internet
-                  needed after setup.
-                </p>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="base-url"
-                  className="block text-sm font-medium text-foreground mb-2"
-                >
-                  Base URL
-                </label>
-                <input
-                  id="base-url"
-                  type="text"
-                  value={aiSettings.baseUrl}
-                  onChange={(e) => updateSettings({ baseUrl: e.target.value })}
-                  placeholder="http://localhost:11434/v1"
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Default:{' '}
-                  <code className="px-1 py-0.5 bg-muted rounded">
-                    http://localhost:11434/v1
-                  </code>
-                </p>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="ollama-model"
-                  className="block text-sm font-medium text-foreground mb-2"
-                >
-                  Model Name
-                </label>
-                <input
-                  id="ollama-model"
-                  type="text"
-                  value={aiSettings.model}
-                  onChange={(e) => updateSettings({ model: e.target.value })}
-                  placeholder="llama3.2"
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Popular choices:{' '}
-                  {[
-                    'llama3.2',
-                    'llama3.1:8b',
-                    'mistral',
-                    'qwen2.5',
-                  ].map((m, i) => (
-                    <span key={m}>
-                      <button
-                        type="button"
-                        onClick={() => updateSettings({ model: m })}
-                        className="text-primary hover:underline"
-                      >
-                        {m}
-                      </button>
-                      {i < 3 ? ' · ' : ''}
-                    </span>
-                  ))}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Run{' '}
-                  <code className="px-1 py-0.5 bg-muted rounded">
-                    ollama list
-                  </code>{' '}
-                  in PowerShell to see which models you have installed.
-                </p>
-              </div>
-
-              <div className="pt-4 border-t border-border">
-                <button
-                  onClick={handleTestOllama}
-                  disabled={ollamaTestStatus === 'testing'}
-                  className={cn(
-                    'px-4 py-2 rounded-lg font-medium transition-colors',
-                    'bg-primary text-primary-foreground hover:bg-primary/90',
-                    'disabled:opacity-50 disabled:cursor-not-allowed'
-                  )}
-                >
-                  {ollamaTestStatus === 'testing'
-                    ? 'Testing...'
-                    : '🔌 Test Connection'}
-                </button>
-                {ollamaTestStatus === 'success' && (
-                  <div className="mt-2 flex items-center gap-2 text-green-600 dark:text-green-400">
-                    <CheckCircle className="size-4" />
-                    <span className="text-sm">
-                      Connection successful! Ollama is running.
-                    </span>
-                  </div>
-                )}
-                {ollamaTestStatus === 'error' && (
-                  <div className="mt-2 space-y-1">
-                    <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
-                      <AlertCircle className="size-4" />
-                      <span className="text-sm">Connection failed</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground ml-6">
-                      Make sure Ollama is running. If you see CORS errors, start
-                      Ollama with:{' '}
-                      <code className="px-1 py-0.5 bg-muted rounded text-xs">
-                        $env:OLLAMA_ORIGINS="*"; ollama serve
-                      </code>
+                  {testStatus === 'success' && (
+                    <p className="mt-2.5 flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+                      <CheckCircle className="size-4" />
+                      Connected to Ollama successfully!
                     </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+                  )}
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-muted/50">
-          <div className="flex items-center gap-2 text-sm">
-            {isAIConnected ? (
-              <>
-                <CheckCircle className="size-4 text-green-600" />
-                <span className="text-foreground">Connected</span>
-              </>
-            ) : (
-              <>
-                <AlertCircle className="size-4 text-yellow-600" />
-                <span className="text-muted-foreground">Not connected</span>
-              </>
+                  {testStatus === 'error' && (
+                    <div className="mt-2.5 space-y-1.5">
+                      <p className="flex items-center gap-1.5 text-sm text-red-600 dark:text-red-400">
+                        <AlertCircle className="size-4 shrink-0" />
+                        Connection failed
+                      </p>
+                      <p className="text-xs text-muted-foreground ml-5.5">
+                        {testError}
+                      </p>
+                      <a
+                        href="https://github.com/ollama/ollama/blob/main/docs/faq.md#how-can-i-allow-additional-origins"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline ml-5.5 inline-flex items-center gap-1"
+                      >
+                        How to enable CORS in Ollama
+                        <ExternalLink className="size-3" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Validation Errors */}
+            {errors.length > 0 && (
+              <div className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 space-y-1">
+                {errors.map((err, i) => (
+                  <p
+                    key={i}
+                    className="text-sm text-red-600 dark:text-red-400 flex items-center gap-1.5"
+                  >
+                    <AlertCircle className="size-3.5 shrink-0" />
+                    {err}
+                  </p>
+                ))}
+              </div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className={cn(
-              'px-4 py-2 rounded-lg font-medium transition-colors',
-              'bg-primary text-primary-foreground hover:bg-primary/90'
-            )}
-          >
-            Close
-          </button>
+
+          {/* Footer Buttons */}
+          <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!isValid(draft)}
+              onClick={handleSave}
+            >
+              Save Settings
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
+
+  // Use Portal to render modal outside of the app's component tree
+  return createPortal(modalContent, document.body);
 }

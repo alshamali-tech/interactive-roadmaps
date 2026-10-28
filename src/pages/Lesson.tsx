@@ -32,7 +32,7 @@ import type { LessonStatus } from '@/engine/progress';
 import type { WidgetConfig } from '@/curriculum/schema';
 import { widgetRegistry } from '@/engine/registry';
 import { InlineMarkdown } from '@/components/utils/InlineMarkdown';
-import { SocraticChat } from '@/components/universal/SocraticChat';
+import { FloatingAITutor } from '@/components/core/FloatingAITutor';
 
 export function Lesson() {
   const { lessonId } = useParams<{ lessonId: string }>();
@@ -118,6 +118,18 @@ export function Lesson() {
               v{lesson.metadata.version}
             </span>
           </div>
+          {status !== 'locked' && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 mt-2">
+              <Sparkles className="size-3.5 text-primary shrink-0" />
+              <span>
+                <span className="font-medium text-foreground">AI Tutor available</span> — Click the chat button in the bottom-right corner or press{' '}
+                <kbd className="px-1.5 py-0.5 bg-muted rounded text-[0.65rem] font-mono">
+                  Ctrl+K
+                </kbd>{' '}
+                to ask questions about this lesson
+              </span>
+            </div>
+          )}
           <CardTitle className="text-2xl">{lesson.title}</CardTitle>
           {lesson.description && (
             <CardDescription className="text-base">
@@ -142,6 +154,13 @@ export function Lesson() {
             <MarkdownRenderer
               markdown={lesson.content.markdown}
               widgets={lesson.content.widgets}
+              lessonId={lesson.id}
+              lessonTitle={lesson.title}
+              lessonDescription={lesson.description}
+              lessonContent={lesson.content.markdown}
+              moduleName={moduleName}
+              tags={lesson.metadata.tags}
+              showAITutor={status !== 'locked'}
             />
           </div>
 
@@ -243,11 +262,13 @@ export function Lesson() {
       </Card>
 
       {status !== 'locked' && (
-        <SocraticChat
-          context="global"
+        <FloatingAITutor
           lessonId={lesson.id}
           lessonTitle={lesson.title}
-          placeholder="Ask about this lesson..."
+          lessonDescription={lesson.description}
+          lessonContent={lesson.content.markdown}
+          moduleName={moduleName}
+          tags={lesson.metadata.tags}
         />
       )}
     </div>
@@ -289,9 +310,23 @@ function CopyButton({ text }: { text: string }) {
 function MarkdownRenderer({
   markdown,
   widgets,
+  lessonId,
+  lessonTitle,
+  lessonDescription,
+  lessonContent,
+  moduleName,
+  tags,
+  showAITutor,
 }: {
   markdown: string;
   widgets: WidgetConfig[];
+  lessonId?: string;
+  lessonTitle?: string;
+  lessonDescription?: string;
+  lessonContent?: string;
+  moduleName?: string;
+  tags?: string[];
+  showAITutor?: boolean;
 }) {
   const lines = markdown.split('\n');
   const elements: ReactNode[] = [];
@@ -299,6 +334,7 @@ function MarkdownRenderer({
   let codeBlockLines: string[] = [];
   let paragraphLines: string[] = [];
   let blockquoteLines: string[] = [];
+  let sectionCount = 0;
 
   const flushParagraph = () => {
     if (paragraphLines.length > 0) {
@@ -399,6 +435,7 @@ function MarkdownRenderer({
 
     if (h1Match) {
       flushParagraph();
+      sectionCount++;
       elements.push(
         <h1
           key={`h1-${elements.length}`}
@@ -411,6 +448,7 @@ function MarkdownRenderer({
     }
     if (h2Match) {
       flushParagraph();
+      sectionCount++;
       elements.push(
         <h2
           key={`h2-${elements.length}`}
@@ -419,10 +457,39 @@ function MarkdownRenderer({
           <InlineMarkdown text={h2Match[1]} />
         </h2>
       );
+      // Add contextual AI prompt after every 2nd section
+      if (showAITutor && sectionCount > 0 && sectionCount % 2 === 0 && lessonId) {
+        elements.push(
+          <div
+            key={`ai-prompt-${elements.length}`}
+            className="my-4 flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 border border-border/50 rounded-lg px-3 py-2"
+          >
+            <Sparkles className="size-3.5 text-primary shrink-0" />
+            <span className="flex-1">
+              Have questions about this section? Use the AI Tutor to get help.
+            </span>
+            <button
+              onClick={() => {
+                // Trigger the floating AI tutor
+                const event = new KeyboardEvent('keydown', {
+                  key: 'k',
+                  ctrlKey: true,
+                  bubbles: true,
+                });
+                window.dispatchEvent(event);
+              }}
+              className="text-primary hover:text-primary/80 font-medium whitespace-nowrap"
+            >
+              Ask AI
+            </button>
+          </div>
+        );
+      }
       continue;
     }
     if (h3Match) {
       flushParagraph();
+      sectionCount++;
       elements.push(
         <h3
           key={`h3-${elements.length}`}

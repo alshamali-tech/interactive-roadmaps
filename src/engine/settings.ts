@@ -33,6 +33,14 @@ function computeConnected(settings: AISettings): boolean {
   return false;
 }
 
+/**
+ * Standalone function to check if AI is connected.
+ * Can be used outside of React components (e.g., in services).
+ */
+export function isAIConnected(settings: AISettings): boolean {
+  return computeConnected(settings);
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
