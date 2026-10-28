@@ -1,40 +1,46 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 interface SidebarState {
   /** Whether the sidebar is open (mobile overlay) */
   open: boolean;
-  /** Module expansion state — plain object for proper reactivity */
+  /** Whether the desktop sidebar is collapsed (showing rail) */
+  desktopCollapsed: boolean;
+  /** Module expansion state */
   expandedModules: Record<string, boolean>;
 
   toggle: () => void;
   close: () => void;
+  toggleDesktop: () => void;
   toggleModule: (moduleId: string) => void;
   isModuleExpanded: (moduleId: string) => boolean;
 }
 
-/**
- * Lightweight store for mobile sidebar toggle state
- * and module-level expansion state.
- *
- * Uses a plain Record<string, boolean> instead of Set so that
- * Zustand selectors can detect changes and trigger re-renders.
- */
-export const useSidebarStore = create<SidebarState>()((set, get) => ({
-  open: false,
-  expandedModules: {},
+export const useSidebarStore = create<SidebarState>()(
+  persist(
+    (set, get) => ({
+      open: false,
+      desktopCollapsed: false,
+      expandedModules: {},
 
-  toggle: () => set((s) => ({ open: !s.open })),
-  close: () => set({ open: false }),
+      toggle: () => set((s) => ({ open: !s.open })),
+      close: () => set({ open: false }),
+      toggleDesktop: () => set((s) => ({ desktopCollapsed: !s.desktopCollapsed })),
 
-  toggleModule: (moduleId: string) =>
-    set((s) => ({
-      expandedModules: {
-        ...s.expandedModules,
-        [moduleId]: !s.expandedModules[moduleId],
+      toggleModule: (moduleId: string) =>
+        set((s) => ({
+          expandedModules: {
+            ...s.expandedModules,
+            [moduleId]: !s.expandedModules[moduleId],
+          },
+        })),
+
+      isModuleExpanded: (moduleId: string) => {
+        return !!get().expandedModules[moduleId];
       },
-    })),
-
-  isModuleExpanded: (moduleId: string) => {
-    return !!get().expandedModules[moduleId];
-  },
-}));
+    }),
+    {
+      name: 'software-engineer-academy-sidebar',
+    }
+  )
+);

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+﻿import type { ReactNode } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProgressStore } from '@/engine/progress';
 import { tracks } from '@/curriculum/graph';
@@ -14,30 +14,32 @@ import {
 } from '@/components/ui/card';
 import {
   ArrowLeft,
+  ArrowRight,
   Lock,
   CheckCircle2,
   CirclePlay,
   Clock,
   ChevronRight,
+  ChevronLeft,
   AlertTriangle,
   Tag,
   Sparkles,
+  Copy,
+  Check,
 } from 'lucide-react';
+import { useState, useCallback } from 'react';
 import type { LessonStatus } from '@/engine/progress';
 import type { WidgetConfig } from '@/curriculum/schema';
 import { widgetRegistry } from '@/engine/registry';
 import { InlineMarkdown } from '@/components/utils/InlineMarkdown';
+import { SocraticChat } from '@/components/universal/SocraticChat';
 
-/**
- * Lesson route — displays lesson content (markdown + widgets) and completion controls.
- */
 export function Lesson() {
   const { lessonId } = useParams<{ lessonId: string }>();
   const navigate = useNavigate();
   const { getLessonStatus, markComplete, markIncomplete, completedLessons } =
     useProgressStore();
 
-  // Find the lesson across all tracks/modules
   let lesson = null;
   let moduleName = '';
   for (const track of tracks) {
@@ -82,12 +84,12 @@ export function Lesson() {
   const status: LessonStatus = getLessonStatus(lesson.id);
   const isCompleted = completedLessons.includes(lesson.id);
 
-  // Find next lesson in the same module
   const parentModule = tracks
     .flatMap((t) => t.modules)
     .find((m) => m.lessons.some((l) => l.id === lessonId));
   const lessonIndex =
     parentModule?.lessons.findIndex((l) => l.id === lessonId) ?? -1;
+  const prevLesson = lessonIndex > 0 ? parentModule?.lessons[lessonIndex - 1] : undefined;
   const nextLesson = parentModule?.lessons[lessonIndex + 1];
 
   return (
@@ -122,7 +124,6 @@ export function Lesson() {
               {lesson.description}
             </CardDescription>
           )}
-          {/* Tags */}
           <div className="flex flex-wrap gap-1.5 pt-1">
             {lesson.metadata.tags.map((tag) => (
               <span
@@ -137,7 +138,6 @@ export function Lesson() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Rendered markdown + widgets */}
           <div className="rounded-lg border border-border bg-muted/10 p-6">
             <MarkdownRenderer
               markdown={lesson.content.markdown}
@@ -145,7 +145,6 @@ export function Lesson() {
             />
           </div>
 
-          {/* Prerequisites */}
           {lesson.prerequisites.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-medium text-foreground">
@@ -161,9 +160,7 @@ export function Lesson() {
                     <Link
                       key={prereqId}
                       to={
-                        prereqStatus === 'locked'
-                          ? '#'
-                          : `/lesson/${prereqId}`
+                        prereqStatus === 'locked' ? '#' : `/lesson/${prereqId}`
                       }
                       className="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 rounded-full px-3 py-1 transition-colors"
                       onClick={(e) => {
@@ -214,22 +211,76 @@ export function Lesson() {
                   'Mark Complete'
                 )}
               </Button>
-              {isCompleted && nextLesson && (
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="w-full"
-                  onClick={() => navigate(`/lesson/${nextLesson.id}`)}
-                >
-                  Next: {nextLesson.title}
-                  <ChevronRight className="size-4 ml-1" />
-                </Button>
-              )}
+
+              {/* Prev / Next navigation */}
+              <div className="flex gap-2 w-full">
+                {prevLesson && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 justify-start"
+                    onClick={() => navigate(`/lesson/${prevLesson.id}`)}
+                  >
+                    <ChevronLeft className="size-4 mr-1" />
+                    <span className="truncate">{prevLesson.title}</span>
+                  </Button>
+                )}
+                {isCompleted && nextLesson && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 justify-end"
+                    onClick={() => navigate(`/lesson/${nextLesson.id}`)}
+                  >
+                    <span className="truncate">{nextLesson.title}</span>
+                    <ChevronRight className="size-4 ml-1" />
+                  </Button>
+                )}
+              </div>
             </>
           )}
         </CardFooter>
       </Card>
+
+      {status !== 'locked' && (
+        <SocraticChat
+          context="global"
+          lessonId={lesson.id}
+          lessonTitle={lesson.title}
+          placeholder="Ask about this lesson..."
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Copy Button for Code Blocks ───────────────────────────────────────────
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // fallback
+    }
+  }, [text]);
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-2 right-2 p-1.5 rounded bg-[#313244] hover:bg-[#45475a] text-[#cdd6f4] transition-colors"
+      aria-label="Copy code"
+      title="Copy code"
+    >
+      {copied ? (
+        <Check className="size-3.5 text-green-400" />
+      ) : (
+        <Copy className="size-3.5" />
+      )}
+    </button>
   );
 }
 
@@ -247,6 +298,7 @@ function MarkdownRenderer({
   let inCodeBlock = false;
   let codeBlockLines: string[] = [];
   let paragraphLines: string[] = [];
+  let blockquoteLines: string[] = [];
 
   const flushParagraph = () => {
     if (paragraphLines.length > 0) {
@@ -265,26 +317,42 @@ function MarkdownRenderer({
     }
   };
 
+  const flushBlockquote = () => {
+    if (blockquoteLines.length > 0) {
+      const text = blockquoteLines.join(' ').trim();
+      if (text) {
+        elements.push(
+          <blockquote
+            key={`bq-${elements.length}`}
+            className="border-l-4 border-primary/40 pl-4 py-1 my-4 italic text-muted-foreground"
+          >
+            <InlineMarkdown text={text} />
+          </blockquote>
+        );
+      }
+      blockquoteLines = [];
+    }
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Code block handling
     if (line.startsWith('```')) {
       if (inCodeBlock) {
+        const codeContent = codeBlockLines.join('\n');
         elements.push(
-          <pre
-            key={`code-${elements.length}`}
-            className="bg-[#1e1e2e] rounded-lg p-4 overflow-x-auto mb-4 text-sm"
-          >
-            <code className="font-mono text-[#cdd6f4]">
-              {codeBlockLines.join('\n')}
-            </code>
-          </pre>
+          <div key={`code-${elements.length}`} className="relative mb-4 group">
+            <pre className="bg-[#1e1e2e] rounded-lg p-4 overflow-x-auto text-sm pr-10">
+              <code className="font-mono text-[#cdd6f4]">{codeContent}</code>
+            </pre>
+            <CopyButton text={codeContent} />
+          </div>
         );
         codeBlockLines = [];
         inCodeBlock = false;
       } else {
         flushParagraph();
+        flushBlockquote();
         inCodeBlock = true;
       }
       continue;
@@ -295,30 +363,36 @@ function MarkdownRenderer({
       continue;
     }
 
-    // Widget placeholder: {{widget:id}}
     const widgetMatch = line.match(/^\{\{widget:([^}]+)\}\}$/);
     if (widgetMatch) {
       flushParagraph();
+      flushBlockquote();
       const widgetId = widgetMatch[1];
       const widget = widgets.find((w) => w.id === widgetId);
       if (widget) {
         elements.push(
-          <WidgetRenderer
-            key={`widget-${elements.length}`}
-            widget={widget}
-          />
+          <WidgetRenderer key={`widget-${elements.length}`} widget={widget} />
         );
       }
       continue;
     }
 
-    // Empty line = paragraph break
     if (line.trim() === '') {
       flushParagraph();
+      flushBlockquote();
       continue;
     }
 
-    // Headings
+    // Blockquote
+    const bqMatch = line.match(/^>\s?(.*)$/);
+    if (bqMatch) {
+      flushParagraph();
+      blockquoteLines.push(bqMatch[1]);
+      continue;
+    } else if (blockquoteLines.length > 0) {
+      flushBlockquote();
+    }
+
     const h3Match = line.match(/^### (.+)$/);
     const h2Match = line.match(/^## (.+)$/);
     const h1Match = line.match(/^# (.+)$/);
@@ -360,7 +434,6 @@ function MarkdownRenderer({
       continue;
     }
 
-    // List items
     const olMatch = line.match(/^\d+\.\s+(.+)$/);
     const ulMatch = line.match(/^[-*]\s+(.+)$/);
 
@@ -398,7 +471,6 @@ function MarkdownRenderer({
       continue;
     }
 
-    // Table rows
     if (line.startsWith('|') && line.includes('|', 1)) {
       flushParagraph();
       const tableRows: string[][] = [];
@@ -408,7 +480,6 @@ function MarkdownRenderer({
           .split('|')
           .slice(1, -1)
           .map((c) => c.trim());
-        // Skip separator rows (e.g., |---|---|)
         if (!row.every((c) => /^[-:]+$/.test(c))) {
           tableRows.push(row);
         }
@@ -459,25 +530,19 @@ function MarkdownRenderer({
       continue;
     }
 
-    // Regular text — accumulate for paragraph
     paragraphLines.push(line);
   }
 
   flushParagraph();
+  flushBlockquote();
   return <>{elements}</>;
 }
 
-// ─── Widget Renderer ────────────────────────────────────────────────────────
-
 function WidgetRenderer({ widget }: { widget: WidgetConfig }) {
-  // Look up the component in the widget registry
   const RegisteredComponent = widgetRegistry.resolve(widget);
-
   if (RegisteredComponent) {
     return <RegisteredComponent {...widget.props} />;
   }
-
-  // Fallback for unregistered widget types
   return (
     <div className="my-5 rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
       <Sparkles className="size-4 mx-auto mb-1" />
@@ -488,8 +553,6 @@ function WidgetRenderer({ widget }: { widget: WidgetConfig }) {
     </div>
   );
 }
-
-// ─── Badges ─────────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: LessonStatus }) {
   const config = {

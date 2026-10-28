@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+﻿import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -19,7 +19,7 @@ import {
   FileWarning,
 } from 'lucide-react';
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface TestCaseResult {
   /** The raw test case string */
@@ -38,7 +38,7 @@ interface TestCaseResult {
 
 type RunState = 'idle' | 'running' | 'done';
 
-// ─── Test Case Parser ───────────────────────────────────────────────────────
+// â”€â”€â”€ Test Case Parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Parses a test case string of the form:
@@ -79,7 +79,7 @@ function parseExpected(raw: string): unknown {
     return trimmed.slice(1, -1);
   }
 
-  // Arrays or objects — use Function to parse JSON-like
+  // Arrays or objects â€” use Function to parse JSON-like
   try {
     // eslint-disable-next-line no-new-func
     return new Function(`return (${trimmed})`)();
@@ -126,10 +126,10 @@ function formatValue(val: unknown): string {
   return String(val);
 }
 
-// ─── Mutator Component ──────────────────────────────────────────────────────
+// â”€â”€â”€ Mutator Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
- * The Mutator Widget — a code fixer challenge.
+ * The Mutator Widget â€” a code fixer challenge.
  *
  * Presents a broken code snippet in a Monaco editor with hidden deterministic tests.
  * The user must identify and fix the bug(s) to make all tests pass.
@@ -416,7 +416,7 @@ export function Mutator({
                         </div>
                         {result.error && (
                           <div className="text-red-500 dark:text-red-400 mt-1">
-                            ⚠ {result.error}
+                            âš  {result.error}
                           </div>
                         )}
                       </div>
@@ -474,7 +474,7 @@ export function Mutator({
           <Sparkles className="size-6 text-green-500 shrink-0" />
           <div>
             <p className="text-sm font-bold text-green-700 dark:text-green-400">
-              🎉 All tests passed! Bug squashed!
+              ðŸŽ‰ All tests passed! Bug squashed!
             </p>
             <p className="text-xs text-green-600 dark:text-green-500/80">
               Great debugging work. You&apos;ve successfully identified and fixed the issue.
@@ -510,7 +510,7 @@ export function Mutator({
           {hintExpanded && (
             <div className="px-5 pb-4 -mt-1">
               <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-lg p-4 text-sm text-amber-900 dark:text-amber-200 leading-relaxed">
-                💡 {hint}
+                ðŸ’¡ {hint}
               </div>
             </div>
           )}
@@ -519,3 +519,4 @@ export function Mutator({
     </div>
   );
 }
+

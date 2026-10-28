@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+﻿import { NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useProgressStore } from '@/engine/progress';
 import { tracks } from '@/curriculum/graph';
@@ -12,30 +12,28 @@ import {
   ChevronRight,
   ChevronDown,
   Package,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSidebarStore } from './sidebarStore';
 
-/**
- * Sidebar navigation — renders curriculum tree with module-level data bundles.
- *
- * Modules are rendered as collapsible sections (the "bundle"). When expanded,
- * all lessons within the module are shown without any additional data fetching.
- *
- * Responsive: overlay on mobile, always visible on desktop.
- */
 export function Sidebar() {
   const getLessonStatus = useProgressStore((s) => s.getLessonStatus);
   const completedLessons = useProgressStore((s) => s.completedLessons);
   const open = useSidebarStore((s) => s.open);
   const close = useSidebarStore((s) => s.close);
+  const toggle = useSidebarStore((s) => s.toggle);
+  const desktopCollapsed = useSidebarStore((s) => s.desktopCollapsed);
+  const toggleDesktop = useSidebarStore((s) => s.toggleDesktop);
   const toggleModule = useSidebarStore((s) => s.toggleModule);
   const expandedModules = useSidebarStore((s) => s.expandedModules);
   const location = useLocation();
 
-  // Detect desktop vs mobile with a media query listener
   const [isDesktop, setIsDesktop] = useState(
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true
+    typeof window !== 'undefined'
+      ? window.matchMedia('(min-width: 768px)').matches
+      : true
   );
 
   useEffect(() => {
@@ -45,14 +43,14 @@ export function Sidebar() {
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  // Auto-expand modules that contain the current lesson
+  // Auto-expand modules containing current lesson
   useEffect(() => {
-    const lessonIdMatch = location.pathname.match(/\/lesson\/([^/]+)/);
-    if (lessonIdMatch) {
-      const currentLessonId = lessonIdMatch[1];
+    const match = location.pathname.match(/\/lesson\/([^/]+)/);
+    if (match) {
+      const currentId = match[1];
       for (const track of tracks) {
         for (const mod of track.modules) {
-          if (mod.lessons.some((l) => l.id === currentLessonId)) {
+          if (mod.lessons.some((l) => l.id === currentId)) {
             if (!useSidebarStore.getState().isModuleExpanded(mod.id)) {
               useSidebarStore.getState().toggleModule(mod.id);
             }
@@ -71,7 +69,7 @@ export function Sidebar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
-  const showSidebar = isDesktop || open;
+  const showSidebar = isDesktop ? !desktopCollapsed : open;
 
   return (
     <>
@@ -84,47 +82,66 @@ export function Sidebar() {
         />
       )}
 
-      {/* Sidebar panel */}
+      {/* Collapsed desktop rail */}
+      {isDesktop && desktopCollapsed && (
+        <aside className="w-14 border-r border-border bg-card flex flex-col items-center py-3 sticky top-0 h-screen shrink-0">
+          <button
+            onClick={toggleDesktop}
+            aria-label="Expand sidebar"
+            className="p-2 rounded-md hover:bg-muted transition-colors mb-4"
+          >
+            <PanelLeft className="size-5 text-muted-foreground" />
+          </button>
+          <NavLink
+            to="/"
+            className="p-2 rounded-md hover:bg-muted transition-colors"
+            title="Home"
+          >
+            <BookOpen className="size-5 text-primary" />
+          </NavLink>
+        </aside>
+      )}
+
+      {/* Full sidebar panel */}
       <aside
         className={cn(
-          'w-72 border-r border-border bg-card flex flex-col overflow-y-auto',
+          'w-72 border-r border-border bg-card flex flex-col overflow-y-auto shrink-0',
           'transition-all duration-300 ease-in-out',
-          // Desktop: always visible in flow
           isDesktop
             ? 'relative top-0 z-0 h-screen sticky top-0'
-            : // Mobile: fixed overlay
-              'fixed top-0 left-0 h-full z-50',
-          // Visibility toggle for mobile
-          showSidebar ? 'translate-x-0' : !isDesktop ? '-translate-x-full' : ''
+            : 'fixed top-0 left-0 h-full z-50',
+          showSidebar
+            ? 'translate-x-0'
+            : !isDesktop
+              ? '-translate-x-full'
+              : 'hidden'
         )}
       >
-        {/* Mobile close button */}
-        {!isDesktop && (
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <div className="flex items-center gap-2">
-              <BookOpen className="size-4 text-primary" />
-              <span className="text-sm font-semibold text-foreground">Navigation</span>
-            </div>
-            <Button variant="ghost" size="icon-xs" onClick={close} aria-label="Close sidebar">
+        {/* Header with collapse button */}
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <BookOpen className="size-4 text-primary shrink-0" />
+            <span className="text-sm font-semibold text-foreground truncate">
+              {isDesktop ? 'Curriculum' : 'Navigation'}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={isDesktop ? toggleDesktop : close}
+            aria-label={isDesktop ? 'Collapse sidebar' : 'Close sidebar'}
+          >
+            {isDesktop ? (
+              <PanelLeftClose className="size-4" />
+            ) : (
               <X className="size-4" />
-            </Button>
-          </div>
-        )}
-
-        {/* Desktop header */}
-        {isDesktop && (
-          <div className="p-4 border-b border-border">
-            <div className="flex items-center gap-2">
-              <BookOpen className="size-4 text-primary" />
-              <span className="text-sm font-semibold text-foreground">Curriculum</span>
-            </div>
-          </div>
-        )}
+            )}
+          </Button>
+        </div>
 
         <nav className="flex-1 p-4 space-y-6">
           {tracks.map((track) => (
             <div key={track.id}>
-              {/* Track title */}
               <div className="flex items-center gap-2 px-2 py-1.5 mb-3">
                 <BookOpen className="size-4 text-primary shrink-0" />
                 <span className="text-sm font-semibold text-foreground truncate">
@@ -132,7 +149,6 @@ export function Sidebar() {
                 </span>
               </div>
 
-              {/* Module-level data bundles */}
               {track.modules.map((mod) => {
                 const expanded = !!expandedModules[mod.id];
                 const moduleLessonIds = mod.lessons.map((l) => l.id);
@@ -144,7 +160,6 @@ export function Sidebar() {
 
                 return (
                   <div key={mod.id} className="mb-2">
-                    {/* Module header — clickable to expand/collapse */}
                     <button
                       onClick={() => toggleModule(mod.id)}
                       className={cn(
@@ -154,7 +169,6 @@ export function Sidebar() {
                       )}
                       aria-expanded={expanded}
                     >
-                      {/* Expand/collapse indicator */}
                       <div
                         className={cn(
                           'shrink-0 transition-transform duration-200',
@@ -187,11 +201,12 @@ export function Sidebar() {
                       )}
                     </button>
 
-                    {/* Lessons within the module bundle */}
                     <div
                       className={cn(
                         'overflow-hidden transition-all duration-300 ease-in-out',
-                        expanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
+                        expanded
+                          ? 'max-h-[500px] opacity-100'
+                          : 'max-h-0 opacity-0'
                       )}
                     >
                       <div className="ml-4 mt-1 space-y-0.5 border-l border-border pl-2 py-1">
@@ -200,7 +215,11 @@ export function Sidebar() {
                           return (
                             <NavLink
                               key={lesson.id}
-                              to={status === 'locked' ? '#' : `/lesson/${lesson.id}`}
+                              to={
+                                status === 'locked'
+                                  ? '#'
+                                  : `/lesson/${lesson.id}`
+                              }
                               onClick={(e) => {
                                 if (status === 'locked') e.preventDefault();
                               }}
@@ -234,9 +253,8 @@ export function Sidebar() {
           ))}
         </nav>
 
-        {/* Footer */}
         <div className="p-4 border-t border-border text-xs text-muted-foreground">
-          <p>© 2026 Software Engineer Academy</p>
+          <p>© {new Date().getFullYear()} Software Engineer Academy</p>
         </div>
       </aside>
     </>

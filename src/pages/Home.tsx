@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+﻿import { useNavigate, useParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,12 +21,15 @@ import {
 } from 'lucide-react';
 import type { Difficulty } from '@/curriculum/schema';
 
-/**
- * Home route — lists all Tracks from graph.ts with progress overview.
- */
 export function Home() {
   const navigate = useNavigate();
+  const { trackId } = useParams();
   const { completedLessons, getLessonStatus } = useProgressStore();
+
+  // Filter tracks if a specific trackId is in the URL
+  const displayTracks = trackId
+    ? tracks.filter((t) => t.id === trackId)
+    : tracks;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -36,11 +39,12 @@ export function Home() {
           🚀 Welcome to the Academy
         </Badge>
         <h2 className="text-3xl md:text-4xl font-bold text-foreground tracking-tight">
-          Learning Tracks
+          {trackId ? displayTracks[0]?.title ?? 'Track' : 'Learning Tracks'}
         </h2>
         <p className="text-muted-foreground text-lg">
-          Choose a track to begin your journey through the curriculum.
-          Lessons unlock as you complete prerequisites.
+          {trackId
+            ? displayTracks[0]?.description ?? ''
+            : 'Choose a track to begin your journey through the curriculum. Lessons unlock as you complete prerequisites.'}
         </p>
       </div>
 
@@ -57,7 +61,7 @@ export function Home() {
 
       {/* Track Cards */}
       <div className="grid md:grid-cols-2 gap-6">
-        {tracks.map((track) => {
+        {displayTracks.map((track) => {
           const totalLessons = track.modules.reduce((sum, m) => sum + m.lessons.length, 0);
           const totalDuration = track.modules.reduce(
             (sum, m) =>
@@ -66,12 +70,10 @@ export function Home() {
             0
           );
 
-          // Collect all unique tags
           const allTags = Array.from(
             new Set(track.modules.flatMap((m) => m.lessons.flatMap((l) => l.metadata.tags)))
           ).slice(0, 5);
 
-          // Determine max difficulty in this track
           const difficultyOrder: Record<Difficulty, number> = {
             beginner: 0,
             intermediate: 1,
@@ -84,7 +86,6 @@ export function Home() {
               'beginner'
             );
 
-          // Count completed in this track
           const trackLessonIds = track.modules.flatMap((m) => m.lessons.map((l) => l.id));
           const completedInTrack = trackLessonIds.filter((id) =>
             completedLessons.includes(id)
@@ -103,7 +104,6 @@ export function Home() {
                 <CardDescription>{track.description}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Stats */}
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <BookOpen className="size-4" />
@@ -119,7 +119,6 @@ export function Home() {
                   </span>
                 </div>
 
-                {/* Tags */}
                 <div className="flex flex-wrap gap-1.5">
                   {allTags.map((tag) => (
                     <span
@@ -131,7 +130,6 @@ export function Home() {
                   ))}
                 </div>
 
-                {/* Progress bar */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Progress</span>
@@ -145,7 +143,6 @@ export function Home() {
                   </div>
                 </div>
 
-                {/* Module list */}
                 <div className="space-y-2">
                   {track.modules.map((mod) => {
                     const modCompleted = mod.lessons.filter(
@@ -173,16 +170,22 @@ export function Home() {
               <CardFooter>
                 <Button
                   onClick={() => {
-                    // Navigate to the first available/completed lesson, or the first lesson
-                    const firstLesson = track.modules[0]?.lessons[0];
-                    if (firstLesson) {
-                      const status = getLessonStatus(firstLesson.id);
+                    // Navigate to the FIRST UNCOMPLETED available lesson,
+                    // falling back to the first lesson if all are done
+                    const allLessons = track.modules.flatMap((m) => m.lessons);
+                    const nextLesson = allLessons.find(
+                      (l) => getLessonStatus(l.id) === 'available'
+                    );
+                    const fallback = allLessons[0];
+                    const target = nextLesson ?? fallback;
+                    if (target) {
+                      const status = getLessonStatus(target.id);
                       if (status !== 'locked') {
-                        navigate(`/lesson/${firstLesson.id}`);
+                        navigate(`/lesson/${target.id}`);
                         return;
                       }
                     }
-                    navigate(`/track/${track.id}`);
+                    navigate('/');
                   }}
                   className="w-full"
                 >
