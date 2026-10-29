@@ -80,7 +80,7 @@ export const useProgressStore = create<ProgressState>()(
       },
     }),
     {
-      name: 'software-engineer-academy-progress',
+      name: 'interactive-roadmaps-progress',
     }
   )
 );

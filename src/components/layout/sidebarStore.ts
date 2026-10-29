@@ -40,7 +40,7 @@ export const useSidebarStore = create<SidebarState>()(
       },
     }),
     {
-      name: 'software-engineer-academy-sidebar',
+      name: 'interactive-roadmaps-sidebar',
     }
   )
 );

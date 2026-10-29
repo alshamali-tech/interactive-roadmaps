@@ -62,7 +62,7 @@ export const useSettingsStore = create<SettingsState>()(
         }),
     }),
     {
-      name: 'software-engineer-academy-settings',
+      name: 'interactive-roadmaps-settings',
       onRehydrate: () => (state) => {
         // Recompute isAIConnected on hydration from localStorage
         if (state) {

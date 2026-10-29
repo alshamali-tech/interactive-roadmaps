@@ -2,7 +2,7 @@
 
 type Theme = 'light' | 'dark' | 'system';
 
-const THEME_KEY = 'software-engineer-academy-theme';
+const THEME_KEY = 'interactive-roadmaps-theme';
 
 function getSystemTheme(): 'light' | 'dark' {
   if (typeof window === 'undefined') return 'light';
