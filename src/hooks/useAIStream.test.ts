@@ -8,6 +8,27 @@ vi.mock('../engine/aiService', () => ({
   streamChatCompletion: vi.fn(),
 }));
 
+// Helper to create a mock Response with all required properties
+function createMockResponse(body: ReadableStream<Uint8Array> | null): Response {
+  return {
+    body,
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: new Headers(),
+    url: 'http://localhost',
+    redirected: false,
+    type: 'basic',
+    clone: () => createMockResponse(body),
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+    blob: () => Promise.resolve(new Blob()),
+    formData: () => Promise.resolve(new FormData()),
+    json: () => Promise.resolve({}),
+    text: () => Promise.resolve(''),
+    bodyUsed: false,
+  } as Response;
+}
+
 describe('useAIStream', () => {
   beforeEach(() => {
     useSettingsStore.setState({
@@ -54,9 +75,9 @@ describe('useAIStream', () => {
       }),
     };
 
-    vi.mocked(aiService.streamChatCompletion).mockResolvedValue({
-      body: { getReader: () => mockReader },
-    } as Response);
+    vi.mocked(aiService.streamChatCompletion).mockResolvedValue(
+      createMockResponse({ getReader: () => mockReader } as any)
+    );
 
     const { result } = renderHook(() => useAIStream());
 
@@ -81,9 +102,9 @@ describe('useAIStream', () => {
       }),
     };
 
-    vi.mocked(aiService.streamChatCompletion).mockResolvedValue({
-      body: { getReader: () => mockReader },
-    } as Response);
+    vi.mocked(aiService.streamChatCompletion).mockResolvedValue(
+      createMockResponse({ getReader: () => mockReader } as any)
+    );
 
     const { result } = renderHook(() => useAIStream());
 
@@ -203,9 +224,9 @@ describe('useAIStream', () => {
             abortCalled = true;
           });
         }
-        return Promise.resolve({
-          body: { getReader: () => mockReader },
-        } as Response);
+        return Promise.resolve(
+          createMockResponse({ getReader: () => mockReader } as any)
+        );
       }
     );
 
@@ -250,9 +271,9 @@ describe('useAIStream', () => {
       read: vi.fn().mockResolvedValue({ done: true, value: undefined }),
     };
 
-    vi.mocked(aiService.streamChatCompletion).mockResolvedValueOnce({
-      body: { getReader: () => mockReader },
-    } as Response);
+    vi.mocked(aiService.streamChatCompletion).mockResolvedValueOnce(
+      createMockResponse({ getReader: () => mockReader } as any)
+    );
 
     await act(async () => {
       await result.current.startStream([{ role: 'user', content: 'Hi again' }]);
@@ -262,9 +283,9 @@ describe('useAIStream', () => {
   });
 
   it('handles no reader available error', async () => {
-    vi.mocked(aiService.streamChatCompletion).mockResolvedValue({
-      body: null,
-    } as Response);
+    vi.mocked(aiService.streamChatCompletion).mockResolvedValue(
+      createMockResponse(null)
+    );
 
     const { result } = renderHook(() => useAIStream());
 
@@ -293,9 +314,9 @@ describe('useAIStream', () => {
       }),
     };
 
-    vi.mocked(aiService.streamChatCompletion).mockResolvedValue({
-      body: { getReader: () => mockReader },
-    } as Response);
+    vi.mocked(aiService.streamChatCompletion).mockResolvedValue(
+      createMockResponse({ getReader: () => mockReader } as any)
+    );
 
     const { result } = renderHook(() => useAIStream());
 
@@ -324,9 +345,9 @@ describe('useAIStream', () => {
       }),
     };
 
-    vi.mocked(aiService.streamChatCompletion).mockResolvedValue({
-      body: { getReader: () => mockReader },
-    } as Response);
+    vi.mocked(aiService.streamChatCompletion).mockResolvedValue(
+      createMockResponse({ getReader: () => mockReader } as any)
+    );
 
     const { result } = renderHook(() => useAIStream());
 

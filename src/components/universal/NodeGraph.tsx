@@ -18,10 +18,34 @@ import type { NodeGraphProps } from '@/curriculum/schema';
 import { Button } from '@/components/ui/button';
 import { Trash2, Plus, Save } from 'lucide-react';
 
+// Convert schema nodes to React Flow nodes (add required `data` property)
+type NodeData = { label: string; description?: string };
+type FlowNodeType = 'input' | 'output' | 'process' | 'condition' | 'default';
+type FlowNode = Node<NodeData, FlowNodeType>;
+
+function toFlowNodes(initialNodes: NodeGraphProps['initialNodes']): FlowNode[] {
+  return initialNodes.map((n) => ({
+    id: n.id,
+    type: n.type || 'default',
+    position: n.position,
+    data: { label: n.label, description: n.description },
+  }));
+}
+
+function toFlowEdges(initialEdges: NodeGraphProps['initialEdges']): Edge[] {
+  return initialEdges.map((e) => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    label: e.label,
+    animated: e.animated,
+  }));
+}
+
 export function NodeGraph({ initialNodes = [], initialEdges = [], width = '100%', height = '450px' }: NodeGraphProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
-  const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(toFlowNodes(initialNodes));
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(toFlowEdges(initialEdges));
+  const [rfInstance, setRfInstance] = useState<ReactFlowInstance<FlowNode, Edge> | null>(null);
 
   const onConnect = useCallback(
     (connection: Connection) =>
@@ -39,7 +63,7 @@ export function NodeGraph({ initialNodes = [], initialEdges = [], width = '100%'
     [setEdges]
   );
 
-  const onInit = useCallback((instance: ReactFlowInstance) => {
+  const onInit = useCallback((instance: ReactFlowInstance<FlowNode, Edge>) => {
     setRfInstance(instance);
   }, []);
 
@@ -50,8 +74,9 @@ export function NodeGraph({ initialNodes = [], initialEdges = [], width = '100%'
   };
 
   const addNode = () => {
-    const newNode: Node = {
+    const newNode: FlowNode = {
       id: `node-${Date.now()}`,
+      type: 'default',
       position: { x: Math.random() * 300 + 100, y: Math.random() * 200 + 100 },
       data: { label: `New Node` },
     };
@@ -87,8 +112,8 @@ export function NodeGraph({ initialNodes = [], initialEdges = [], width = '100%'
         </div>
       </div>
 
-      <div style={{ width, height }} className="bg-background">
-        <ReactFlow
+      <div style={{ width: width as string, height: height as string }} className="bg-background">
+        <ReactFlow<FlowNode, Edge>
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}

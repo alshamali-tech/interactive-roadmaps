@@ -63,7 +63,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'interactive-roadmaps-settings',
-      onRehydrate: () => (state) => {
+      onRehydrateStorage: () => (state) => {
         // Recompute isAIConnected on hydration from localStorage
         if (state) {
           state.isAIConnected = computeConnected(state.aiSettings);

@@ -7,7 +7,6 @@ describe('Data Schema Validation', () => {
       id: 'lesson-1',
       title: 'Introduction to Variables',
       prerequisites: [],
-      contentPath: '/lessons/variables.md',
       metadata: {
         difficulty: 'beginner',
         estimatedMinutes: 15,
@@ -26,12 +25,11 @@ describe('Data Schema Validation', () => {
   });
 
   it('Lesson without required metadata fields fails validation', () => {
-    // @ts-expect-error - This should fail because metadata.difficulty is required
     const invalidLesson: Lesson = {
       id: 'lesson-1',
       title: 'Test',
       prerequisites: [],
-      contentPath: '',
+      // @ts-expect-error - This should fail because metadata.difficulty is required
       metadata: {
         estimatedMinutes: 10,
         tags: [],
@@ -54,7 +52,6 @@ describe('Data Schema Validation', () => {
           id: 'lesson-1',
           title: 'Lesson 1',
           prerequisites: [],
-          contentPath: '',
           metadata: {
             difficulty: 'beginner',
             estimatedMinutes: 10,

@@ -15,9 +15,8 @@ afterEach(() => {
 
 // ── ResizeObserver Mock ──────────────────────────────────────────
 class ResizeObserverMock {
-  private callback: ResizeObserverCallback;
   private observedElements: Set<Element> = new Set();
-  constructor(callback: ResizeObserverCallback) { this.callback = callback; }
+  constructor(_callback: ResizeObserverCallback) { /* callback not used in tests */ }
   observe(target: Element): void { this.observedElements.add(target); }
   unobserve(target: Element): void { this.observedElements.delete(target); }
   disconnect(): void { this.observedElements.clear(); }

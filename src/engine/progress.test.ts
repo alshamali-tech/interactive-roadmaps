@@ -28,37 +28,25 @@ describe('Progress Store', () => {
 
   it('getLessonStatus returns available for lessons with no prerequisites', () => {
     const { getLessonStatus } = useProgressStore.getState();
-    const lessons = [
-      { id: 'lesson-1', title: 'Test', prerequisites: [], contentPath: '', metadata: {} as any, content: {} as any }
-    ];
-    expect(getLessonStatus('lesson-1', lessons)).toBe('available');
+    // lesson-1 is in the actual curriculum graph with no prerequisites
+    expect(getLessonStatus('lesson-1')).toBe('available');
   });
 
   it('getLessonStatus returns locked when prerequisites are not met', () => {
     const { getLessonStatus } = useProgressStore.getState();
-    const lessons = [
-      { id: 'lesson-1', title: 'Test 1', prerequisites: [], contentPath: '', metadata: {} as any, content: {} as any },
-      { id: 'lesson-2', title: 'Test 2', prerequisites: ['lesson-1'], contentPath: '', metadata: {} as any, content: {} as any }
-    ];
-    expect(getLessonStatus('lesson-2', lessons)).toBe('locked');
+    // lesson-2 depends on lesson-1 in the curriculum graph
+    expect(getLessonStatus('lesson-2')).toBe('locked');
   });
 
   it('getLessonStatus returns available when all prerequisites are met', () => {
     const { markComplete, getLessonStatus } = useProgressStore.getState();
-    const lessons = [
-      { id: 'lesson-1', title: 'Test 1', prerequisites: [], contentPath: '', metadata: {} as any, content: {} as any },
-      { id: 'lesson-2', title: 'Test 2', prerequisites: ['lesson-1'], contentPath: '', metadata: {} as any, content: {} as any }
-    ];
     markComplete('lesson-1');
-    expect(getLessonStatus('lesson-2', lessons)).toBe('available');
+    expect(getLessonStatus('lesson-2')).toBe('available');
   });
 
   it('getLessonStatus returns completed for completed lessons', () => {
     const { markComplete, getLessonStatus } = useProgressStore.getState();
-    const lessons = [
-      { id: 'lesson-1', title: 'Test', prerequisites: [], contentPath: '', metadata: {} as any, content: {} as any }
-    ];
     markComplete('lesson-1');
-    expect(getLessonStatus('lesson-1', lessons)).toBe('completed');
+    expect(getLessonStatus('lesson-1')).toBe('completed');
   });
 });

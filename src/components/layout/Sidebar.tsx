@@ -23,7 +23,6 @@ export function Sidebar() {
   const completedLessons = useProgressStore((s) => s.completedLessons);
   const open = useSidebarStore((s) => s.open);
   const close = useSidebarStore((s) => s.close);
-  const toggle = useSidebarStore((s) => s.toggle);
   const desktopCollapsed = useSidebarStore((s) => s.desktopCollapsed);
   const toggleDesktop = useSidebarStore((s) => s.toggleDesktop);
   const toggleModule = useSidebarStore((s) => s.toggleModule);

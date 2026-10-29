@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Square, GraduationCap, Trash2, AlertCircle } from 'lucide-react';
+import { Send, Square, GraduationCap, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   getPromptsByContext,
