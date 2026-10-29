@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, GraduationCap, Loader2, Trash2 } from 'lucide-react';
+import { Send, Square, GraduationCap, Trash2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   getPromptsByContext,
@@ -7,10 +7,8 @@ import {
   type PromptStarter,
 } from '@/data/promptLibrary';
 import { useSettingsStore } from '@/engine/settings';
-import {
-  streamChatCompletion,
-  type ChatMessage as AIServiceMessage,
-} from '@/engine/aiService';
+import { useAIStream } from '@/hooks/useAIStream';
+import type { ChatMessage as AIServiceMessage } from '@/engine/aiService';
 import {
   loadConversation,
   saveConversation,
@@ -60,16 +58,14 @@ export function SocraticChat({
 }: SocraticChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   // Track whether we've loaded persisted conversation for this lesson
   const loadedRef = useRef(false);
 
-  const { aiSettings } = useSettingsStore();
   const aiConnected = useSettingsStore((s) => s.isAIConnected);
+  const { streamingText, isLoading, error, startStream, abortStream } = useAIStream();
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   // ── Pick prompts: lesson-aware if possible, otherwise context-based ────
   const prompts: PromptStarter[] = useMemo(() => {
@@ -148,17 +144,54 @@ export function SocraticChat({
     }
   }, [input]);
 
-  // ── Abort in-flight request on unmount ────────────────────────────────
+  // ── Update streaming message content as it arrives ────────────────────
   useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
+    if (isLoading && streamingText) {
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg?.isStreaming) {
+          return [
+            ...prev.slice(0, -1),
+            { ...lastMsg, content: streamingText },
+          ];
+        }
+        return prev;
+      });
+    }
+  }, [streamingText, isLoading]);
+
+  // ── Finalize streaming message when done ──────────────────────────────
+  useEffect(() => {
+    if (!isLoading) {
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg?.isStreaming) {
+          return [
+            ...prev.slice(0, -1),
+            { ...lastMsg, isStreaming: false },
+          ];
+        }
+        return prev;
+      });
+
+      // If there was an error, add it as a system message
+      if (error) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'system',
+            content: `⚠️ ${error}`,
+            timestamp: new Date(),
+          },
+        ]);
+      }
+    }
+  }, [isLoading, error]);
 
   const doClear = () => {
-    abortRef.current?.abort();
+    abortStream();
     setMessages([]);
-    setIsLoading(false);
     setInput('');
     if (lessonId) clearConversation(lessonId);
   };
@@ -207,96 +240,27 @@ export function SocraticChat({
       return;
     }
 
-    setIsLoading(true);
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      const lessonContext = lessonTitle
-        ? {
-            title: lessonTitle,
-            description: lessonDescription,
-            content: lessonContent,
-            module: moduleName,
-            tags: tags,
-            id: lessonId,
-            currentSection,
-          }
-        : undefined;
-
-      const aiMessages: AIServiceMessage[] = updatedMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const response = await streamChatCompletion(
-        aiMessages,
-        aiSettings,
-        controller.signal,
-        lessonContext
-      );
-
-      if (!response.body) throw new Error('No response body');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let fullContent = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine || !trimmedLine.startsWith('data:')) continue;
-          const data = trimmedLine.slice(5).trim();
-          if (data === '[DONE]') continue;
-
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta?.content || '';
-            if (delta) {
-              fullContent += delta;
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId ? { ...m, content: fullContent } : m
-                )
-              );
-            }
-          } catch {
-            // ignore malformed SSE chunks
-          }
+    // Build lesson context if available
+    const lessonContext = lessonTitle
+      ? {
+          title: lessonTitle,
+          description: lessonDescription,
+          content: lessonContent,
+          module: moduleName,
+          tags: tags,
+          id: lessonId,
+          currentSection,
         }
-      }
+      : undefined;
 
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId ? { ...m, isStreaming: false } : m
-        )
-      );
-    } catch (error: unknown) {
-      if (error instanceof Error && error.name === 'AbortError') return;
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId
-            ? {
-                ...m,
-                content: `❌ Error: ${errorMsg}. Please check your settings and try again.`,
-                isStreaming: false,
-              }
-            : m
-        )
-      );
-    } finally {
-      setIsLoading(false);
-      abortRef.current = null;
-    }
+    // Convert to AI service message format
+    const aiMessages: AIServiceMessage[] = updatedMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    // Start streaming
+    await startStream(aiMessages, lessonContext);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -399,14 +363,15 @@ export function SocraticChat({
                   'rounded-lg p-3 max-w-[80%] text-sm leading-relaxed whitespace-pre-wrap',
                   msg.role === 'user'
                     ? 'bg-blue-500 text-white'
+                    : msg.role === 'system'
+                    ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
                     : 'bg-slate-100 dark:bg-slate-800 text-foreground'
                 )}
               >
                 {msg.content ||
                   (msg.isStreaming ? (
                     <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" />
-                      Thinking...
+                      <span className="inline-block w-2 h-4 bg-current animate-pulse" />
                     </span>
                   ) : (
                     ''
@@ -439,7 +404,7 @@ export function SocraticChat({
               key={p.id}
               type="button"
               onClick={() => handlePromptClick(p)}
-              disabled={isLoading}
+              disabled={isLoading || !aiConnected}
               aria-label={p.template}
               className={cn(
                 'px-3 py-1.5 text-xs rounded-full border cursor-pointer whitespace-nowrap transition-colors',
@@ -466,7 +431,7 @@ export function SocraticChat({
               placeholder || 'Ask a question or click a prompt starter above...'
             }
             aria-label="Chat message input"
-            disabled={isLoading}
+            disabled={isLoading || !aiConnected}
             className={cn(
               'flex-1 rounded-lg border border-slate-200 dark:border-slate-700 p-3 text-sm',
               'resize-none focus:outline-none focus:ring-2 focus:ring-blue-500',
@@ -477,16 +442,19 @@ export function SocraticChat({
           />
           <button
             type="button"
-            onClick={sendMessage}
-            aria-label="Send message"
-            disabled={!input.trim() || isLoading}
+            onClick={isLoading ? abortStream : sendMessage}
+            aria-label={isLoading ? 'Stop generation' : 'Send message'}
+            disabled={!isLoading && (!input.trim() || !aiConnected)}
             className={cn(
-              'bg-blue-500 hover:bg-blue-600 text-white rounded-lg p-3 transition-colors',
+              'rounded-lg p-3 transition-colors',
+              isLoading
+                ? 'bg-red-500 hover:bg-red-600 text-white'
+                : 'bg-blue-500 hover:bg-blue-600 text-white',
               'disabled:opacity-40 disabled:cursor-not-allowed'
             )}
           >
             {isLoading ? (
-              <Loader2 className="size-4 animate-spin" />
+              <Square className="size-4 fill-current" />
             ) : (
               <Send className="size-4" />
             )}

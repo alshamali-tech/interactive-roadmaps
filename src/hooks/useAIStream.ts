@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
-import { streamChatCompletion, type ChatMessage } from '../engine/aiService';
+import { streamChatCompletion, type ChatMessage, type LessonContext } from '../engine/aiService';
 import { useSettingsStore } from '../engine/settings';
 
 export interface UseAIStreamReturn {
   streamingText: string;
   isLoading: boolean;
   error: string | null;
-  startStream: (messages: ChatMessage[]) => Promise<void>;
+  startStream: (messages: ChatMessage[], lessonContext?: LessonContext) => Promise<void>;
   abortStream: () => void;
 }
 
@@ -35,7 +35,7 @@ export function useAIStream(): UseAIStreamReturn {
     }
   }, []);
 
-  const startStream = useCallback(async (messages: ChatMessage[]) => {
+  const startStream = useCallback(async (messages: ChatMessage[], lessonContext?: LessonContext) => {
     // Abort any existing stream
     abortStream();
 
@@ -55,7 +55,8 @@ export function useAIStream(): UseAIStreamReturn {
       const response = await streamChatCompletion(
         messages,
         settings,
-        abortControllerRef.current.signal
+        abortControllerRef.current.signal,
+        lessonContext
       );
 
       // Get the response body reader
@@ -110,7 +111,7 @@ export function useAIStream(): UseAIStreamReturn {
           message.includes('CORS')
         ) {
           setError(
-            'Cannot connect to AI. Check your settings or ensure Ollama is running.'
+            'Cannot connect to AI. Check your settings or ensure Ollama is running with CORS enabled (OLLAMA_ORIGINS=* ollama serve).'
           );
         } else {
           setError(message);

@@ -1,14 +1,58 @@
-﻿import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SocraticChat } from './SocraticChat';
+import { useSettingsStore } from '@/engine/settings';
 
 // Mock crypto.randomUUID for tests
 vi.stubGlobal('crypto', {
   randomUUID: () => 'test-uuid-' + Math.random().toString(36).slice(2),
 });
 
+// Hoisted mutable mock state for useAIStream
+const mockAIStream = vi.hoisted(() => ({
+  streamingText: '',
+  isLoading: false,
+  error: null,
+  startStream: vi.fn(),
+  abortStream: vi.fn(),
+}));
+
+vi.mock('@/hooks/useAIStream', () => ({
+  useAIStream: () => mockAIStream,
+}));
+
+// Mock useSettingsStore with proper selector support
+const createMockStore = (isConnected: boolean) => {
+  return vi.fn((selector: any) => {
+    const state = {
+      aiSettings: {
+        provider: isConnected ? 'openai' : 'none',
+        apiKey: isConnected ? 'test-key' : '',
+        baseUrl: isConnected ? 'http://localhost:11434/v1' : '',
+        model: isConnected ? 'gpt-4o-mini' : '',
+      },
+      isAIConnected: isConnected,
+    };
+    return selector ? selector(state) : state;
+  });
+};
+
+vi.mock('@/engine/settings', () => ({
+  useSettingsStore: vi.fn(),
+}));
+
 describe('SocraticChat', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset mock AI stream state
+    mockAIStream.isLoading = false;
+    mockAIStream.streamingText = '';
+    mockAIStream.error = null;
+    // Default to connected state
+    vi.mocked(useSettingsStore).mockImplementation(createMockStore(true));
+  });
+
   it('renders chat header and empty state message', () => {
     render(<SocraticChat />);
     expect(screen.getByText('AI Tutor')).toBeInTheDocument();
@@ -60,30 +104,38 @@ describe('SocraticChat', () => {
     expect(textarea).toHaveValue('');
   });
 
-  it('demo response appears after sending a message', async () => {
-    const user = userEvent.setup();
+  it('shows appropriate UI when AI is disconnected', () => {
+    // Override mock to return disconnected state
+    vi.mocked(useSettingsStore).mockImplementation(createMockStore(false));
+
     render(<SocraticChat />);
-
+    
+    // Banner should be visible
+    expect(screen.getByText(/AI not connected/i)).toBeInTheDocument();
+    
+    // Input and buttons should be disabled
     const textarea = screen.getByLabelText('Chat message input');
-    await user.type(textarea, 'Help me understand this');
-
     const sendButton = screen.getByLabelText('Send message');
-    await user.click(sendButton);
-
-    await waitFor(
-      () => {
-        expect(
-          screen.getByText(/I'm the Socratic Tutor/i)
-        ).toBeInTheDocument();
-      },
-      { timeout: 2000 }
-    );
+    const hintButton = screen.getByRole('button', { name: /I am stuck/i });
+    
+    expect(textarea).toBeDisabled();
+    expect(sendButton).toBeDisabled();
+    expect(hintButton).toBeDisabled();
   });
 
-  it('no AI connected banner is visible', () => {
+  it('disables input and prompts during loading', async () => {
+    // Set loading state for this test using the hoisted mutable mock
+    mockAIStream.isLoading = true;
+
     render(<SocraticChat />);
-    expect(
-      screen.getByText(/AI not connected/i)
-    ).toBeInTheDocument();
+    
+    const textarea = screen.getByLabelText('Chat message input');
+    // When loading, the send button becomes a stop button
+    const stopButton = screen.getByLabelText('Stop generation');
+    const hintButton = screen.getByRole('button', { name: /I am stuck/i });
+    
+    expect(textarea).toBeDisabled();
+    expect(stopButton).toBeEnabled(); // Stop button should be clickable to abort
+    expect(hintButton).toBeDisabled();
   });
 });
