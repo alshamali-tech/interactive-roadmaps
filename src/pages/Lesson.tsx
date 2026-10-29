@@ -1,4 +1,4 @@
-﻿import type { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useProgressStore } from '@/engine/progress';
 import { tracks } from '@/curriculum/graph';
@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/card';
 import {
   ArrowLeft,
-  ArrowRight,
   Lock,
   CheckCircle2,
   CirclePlay,
@@ -26,19 +25,26 @@ import {
   Sparkles,
   Copy,
   Check,
+  MessageCircle,
 } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { LessonStatus } from '@/engine/progress';
 import type { WidgetConfig } from '@/curriculum/schema';
 import { widgetRegistry } from '@/engine/registry';
 import { InlineMarkdown } from '@/components/utils/InlineMarkdown';
 import { FloatingAITutor } from '@/components/core/FloatingAITutor';
+import { extractSectionTitles } from '@/engine/prompts';
 
 export function Lesson() {
   const { lessonId } = useParams<{ lessonId: string }>();
   const navigate = useNavigate();
   const { getLessonStatus, markComplete, markIncomplete, completedLessons } =
     useProgressStore();
+
+  // ── AI Tutor panel state (owned here so MarkdownRenderer can open it) ──
+  const [aiOpen, setAiOpen] = useState(false);
+  const [prefilledMessage, setPrefilledMessage] = useState<string | undefined>();
+  const [currentSection, setCurrentSection] = useState<string | undefined>();
 
   let lesson = null;
   let moduleName = '';
@@ -55,6 +61,12 @@ export function Lesson() {
     }
     if (lesson) break;
   }
+
+  // ── Derive section titles from the lesson markdown (for roadmap prompt) ─
+  const sectionTitles = useMemo(
+    () => (lesson ? extractSectionTitles(lesson.content.markdown) : []),
+    [lesson]
+  );
 
   if (!lesson) {
     return (
@@ -92,6 +104,25 @@ export function Lesson() {
   const prevLesson = lessonIndex > 0 ? parentModule?.lessons[lessonIndex - 1] : undefined;
   const nextLesson = parentModule?.lessons[lessonIndex + 1];
 
+  // Called when user clicks a contextual "Ask AI" prompt inside the lesson
+  const handleAskAI = useCallback((sectionTitle: string) => {
+    setPrefilledMessage(
+      `I'm reading the "${sectionTitle}" section. Can you explain the key ideas using a concrete example?`
+    );
+    setAiOpen(true);
+  }, []);
+
+  const handleAiOpenChange = useCallback(
+    (open: boolean) => {
+      setAiOpen(open);
+      if (!open) {
+        // Clear prefilled message once the panel is closed
+        setPrefilledMessage(undefined);
+      }
+    },
+    []
+  );
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Breadcrumb */}
@@ -119,10 +150,16 @@ export function Lesson() {
             </span>
           </div>
           {status !== 'locked' && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 mt-2">
+            <div
+              className="flex items-center gap-2 text-xs text-muted-foreground
+                         bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 mt-2"
+            >
               <Sparkles className="size-3.5 text-primary shrink-0" />
               <span>
-                <span className="font-medium text-foreground">AI Tutor available</span> — Click the chat button in the bottom-right corner or press{' '}
+                <span className="font-medium text-foreground">
+                  AI Tutor available
+                </span>{' '}
+                — Click the chat button in the bottom-right corner or press{' '}
                 <kbd className="px-1.5 py-0.5 bg-muted rounded text-[0.65rem] font-mono">
                   Ctrl+K
                 </kbd>{' '}
@@ -140,7 +177,8 @@ export function Lesson() {
             {lesson.metadata.tags.map((tag) => (
               <span
                 key={tag}
-                className="inline-flex items-center gap-1 text-[0.65rem] bg-muted/60 text-muted-foreground rounded-full px-2 py-0.5"
+                className="inline-flex items-center gap-1 text-[0.65rem]
+                           bg-muted/60 text-muted-foreground rounded-full px-2 py-0.5"
               >
                 <Tag className="size-2.5" />
                 {tag}
@@ -154,13 +192,14 @@ export function Lesson() {
             <MarkdownRenderer
               markdown={lesson.content.markdown}
               widgets={lesson.content.widgets}
-              lessonId={lesson.id}
-              lessonTitle={lesson.title}
-              lessonDescription={lesson.description}
-              lessonContent={lesson.content.markdown}
-              moduleName={moduleName}
-              tags={lesson.metadata.tags}
               showAITutor={status !== 'locked'}
+              onAskAI={handleAskAI}
+            />
+            {/* IntersectionObserver lives inside this component; it watches
+                rendered [data-section-title] elements and reports the
+                currently visible section title up to Lesson state. */}
+            <SectionObserver
+              onVisibleSection={setCurrentSection}
             />
           </div>
 
@@ -181,7 +220,8 @@ export function Lesson() {
                       to={
                         prereqStatus === 'locked' ? '#' : `/lesson/${prereqId}`
                       }
-                      className="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 rounded-full px-3 py-1 transition-colors"
+                      className="inline-flex items-center gap-1.5 text-xs bg-muted
+                                 hover:bg-muted/80 rounded-full px-3 py-1 transition-colors"
                       onClick={(e) => {
                         if (prereqStatus === 'locked') e.preventDefault();
                       }}
@@ -202,11 +242,46 @@ export function Lesson() {
               </div>
             </div>
           )}
+
+          {/* End-of-lesson CTA — helps users who scrolled to the bottom
+              discover the AI tutor */}
+          {status !== 'locked' && !aiOpen && (
+            <button
+              onClick={() => {
+                setPrefilledMessage(
+                  `I just finished reading "${lesson.title}". Can you quiz me on the key concepts to make sure I understood everything?`
+                );
+                setAiOpen(true);
+              }}
+              className="w-full flex items-center gap-3 p-4 rounded-lg border
+                         border-dashed border-primary/40 bg-primary/5
+                         hover:bg-primary/10 transition-colors text-left group"
+            >
+              <div
+                className="w-10 h-10 rounded-full bg-primary/20 flex items-center
+                           justify-center group-hover:bg-primary/30 transition-colors"
+              >
+                <MessageCircle className="size-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-foreground">
+                  Review what you learned
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Ask the AI Tutor to quiz you on "{lesson.title}"
+                </div>
+              </div>
+              <ChevronRight className="size-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </button>
+          )}
         </CardContent>
 
         <CardFooter className="flex-col gap-3 items-stretch">
           {status === 'locked' ? (
-            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-2">
+            <div
+              className="flex items-center justify-center gap-2 text-sm
+                         text-muted-foreground py-2"
+            >
               <Lock className="size-4" />
               <span>Complete prerequisites to unlock this lesson</span>
             </div>
@@ -263,16 +338,96 @@ export function Lesson() {
 
       {status !== 'locked' && (
         <FloatingAITutor
+          open={aiOpen}
+          onOpenChange={handleAiOpenChange}
           lessonId={lesson.id}
           lessonTitle={lesson.title}
           lessonDescription={lesson.description}
           lessonContent={lesson.content.markdown}
           moduleName={moduleName}
           tags={lesson.metadata.tags}
+          currentSection={currentSection}
+          sectionTitles={sectionTitles}
+          prefilledMessage={prefilledMessage}
         />
       )}
     </div>
   );
+}
+
+// ─── Section Observer ──────────────────────────────────────────────────────
+
+/**
+ * Watches all [data-section-title] elements in the document and reports
+ * the currently most-visible section title via callback.
+ *
+ * Uses IntersectionObserver for performance (no scroll handlers).
+ * Re-observes whenever the DOM mutates (e.g., navigation to a new lesson)
+ * via a MutationObserver.
+ */
+function SectionObserver({
+  onVisibleSection,
+}: {
+  onVisibleSection: (section: string | undefined) => void;
+}) {
+  const callbackRef = useRef(onVisibleSection);
+  callbackRef.current = onVisibleSection;
+
+  useEffect(() => {
+    // Track which sections are currently intersecting + their ratios
+    const visibleSections = new Map<string, number>();
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const title =
+            (entry.target as HTMLElement).dataset.sectionTitle || '';
+          if (!title) continue;
+          if (entry.isIntersecting) {
+            visibleSections.set(title, entry.intersectionRatio);
+          } else {
+            visibleSections.delete(title);
+          }
+        }
+
+        // Pick the section with highest ratio (or undefined if none)
+        let best: string | undefined;
+        let bestRatio = 0;
+        visibleSections.forEach((ratio, title) => {
+          if (ratio > bestRatio) {
+            best = title;
+            bestRatio = ratio;
+          }
+        });
+        callbackRef.current(best);
+      },
+      {
+        // Trigger at multiple thresholds for better "most visible" resolution
+        threshold: [0, 0.25, 0.5, 0.75, 1],
+        rootMargin: '-80px 0px -40% 0px', // offset for sticky header
+      }
+    );
+
+    const observe = () => {
+      io.disconnect();
+      document
+        .querySelectorAll<HTMLElement>('[data-section-title]')
+        .forEach((el) => io.observe(el));
+    };
+
+    observe();
+
+    // Re-observe when DOM changes (e.g., HMR, lazy-loaded widgets)
+    const mo = new MutationObserver(() => observe());
+    mo.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      io.disconnect();
+      mo.disconnect();
+    };
+  }, []);
+
+  return null;
 }
 
 // ─── Copy Button for Code Blocks ───────────────────────────────────────────
@@ -310,23 +465,14 @@ function CopyButton({ text }: { text: string }) {
 function MarkdownRenderer({
   markdown,
   widgets,
-  lessonId,
-  lessonTitle,
-  lessonDescription,
-  lessonContent,
-  moduleName,
-  tags,
   showAITutor,
+  onAskAI,
 }: {
   markdown: string;
   widgets: WidgetConfig[];
-  lessonId?: string;
-  lessonTitle?: string;
-  lessonDescription?: string;
-  lessonContent?: string;
-  moduleName?: string;
-  tags?: string[];
   showAITutor?: boolean;
+  /** Called when user clicks a contextual "Ask AI" prompt after a section */
+  onAskAI?: (sectionTitle: string) => void;
 }) {
   const lines = markdown.split('\n');
   const elements: ReactNode[] = [];
@@ -439,6 +585,7 @@ function MarkdownRenderer({
       elements.push(
         <h1
           key={`h1-${elements.length}`}
+          data-section-title={h1Match[1]}
           className="text-2xl font-bold text-foreground mb-3 mt-2"
         >
           <InlineMarkdown text={h1Match[1]} />
@@ -452,32 +599,27 @@ function MarkdownRenderer({
       elements.push(
         <h2
           key={`h2-${elements.length}`}
+          data-section-title={h2Match[1]}
           className="text-xl font-semibold text-foreground mb-2 mt-6"
         >
           <InlineMarkdown text={h2Match[1]} />
         </h2>
       );
       // Add contextual AI prompt after every 2nd section
-      if (showAITutor && sectionCount > 0 && sectionCount % 2 === 0 && lessonId) {
+      if (showAITutor && sectionCount > 0 && sectionCount % 2 === 0) {
+        const title = h2Match[1];
         elements.push(
           <div
             key={`ai-prompt-${elements.length}`}
-            className="my-4 flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 border border-border/50 rounded-lg px-3 py-2"
+            className="my-4 flex items-center gap-2 text-xs text-muted-foreground
+                       bg-muted/30 border border-border/50 rounded-lg px-3 py-2"
           >
             <Sparkles className="size-3.5 text-primary shrink-0" />
             <span className="flex-1">
               Have questions about this section? Use the AI Tutor to get help.
             </span>
             <button
-              onClick={() => {
-                // Trigger the floating AI tutor
-                const event = new KeyboardEvent('keydown', {
-                  key: 'k',
-                  ctrlKey: true,
-                  bubbles: true,
-                });
-                window.dispatchEvent(event);
-              }}
+              onClick={() => onAskAI?.(title)}
               className="text-primary hover:text-primary/80 font-medium whitespace-nowrap"
             >
               Ask AI
@@ -493,6 +635,7 @@ function MarkdownRenderer({
       elements.push(
         <h3
           key={`h3-${elements.length}`}
+          data-section-title={h3Match[1]}
           className="text-lg font-semibold text-foreground mb-2 mt-4"
         >
           <InlineMarkdown text={h3Match[1]} />
@@ -611,7 +754,10 @@ function WidgetRenderer({ widget }: { widget: WidgetConfig }) {
     return <RegisteredComponent {...widget.props} />;
   }
   return (
-    <div className="my-5 rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+    <div
+      className="my-5 rounded-lg border border-dashed border-border p-4
+                 text-center text-sm text-muted-foreground"
+    >
       <Sparkles className="size-4 mx-auto mb-1" />
       Unknown widget type:{' '}
       <code className="text-xs bg-muted px-1.5 py-0.5 rounded">

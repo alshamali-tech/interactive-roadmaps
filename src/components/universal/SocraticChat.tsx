@@ -1,9 +1,22 @@
-﻿import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Send, GraduationCap, Loader2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getPromptsByContext, type PromptStarter } from '@/data/promptLibrary';
+import {
+  getPromptsByContext,
+  getLessonPrompts,
+  type PromptStarter,
+} from '@/data/promptLibrary';
 import { useSettingsStore } from '@/engine/settings';
-import { streamChatCompletion, type ChatMessage as AIServiceMessage } from '@/engine/aiService';
+import {
+  streamChatCompletion,
+  type ChatMessage as AIServiceMessage,
+} from '@/engine/aiService';
+import {
+  loadConversation,
+  saveConversation,
+  clearConversation,
+  type StoredMessage,
+} from '@/engine/chatHistory';
 
 interface ChatMessage {
   id: string;
@@ -23,6 +36,12 @@ interface SocraticChatProps {
   tags?: string[];
   placeholder?: string;
   variant?: 'card' | 'panel';
+  /** Current H2 section the user is viewing (from IntersectionObserver) */
+  currentSection?: string;
+  /** All H2 titles — used to show roadmap prompt when currentSection is unknown */
+  sectionTitles?: string[];
+  /** Pre-fill the input and focus it (e.g., from a contextual "Ask AI" click) */
+  prefilledMessage?: string;
 }
 
 export function SocraticChat({
@@ -35,10 +54,15 @@ export function SocraticChat({
   tags,
   placeholder,
   variant = 'card',
+  currentSection,
+  sectionTitles,
+  prefilledMessage,
 }: SocraticChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // Track whether we've loaded persisted conversation for this lesson
+  const loadedRef = useRef(false);
 
   const { aiSettings } = useSettingsStore();
   const aiConnected = useSettingsStore((s) => s.isAIConnected);
@@ -47,20 +71,75 @@ export function SocraticChat({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const prompts = getPromptsByContext(context);
+  // ── Pick prompts: lesson-aware if possible, otherwise context-based ────
+  const prompts: PromptStarter[] = useMemo(() => {
+    if (lessonTitle || currentSection || sectionTitles) {
+      return getLessonPrompts({
+        lessonTitle,
+        currentSection,
+        sectionTitles,
+      });
+    }
+    return getPromptsByContext(context);
+  }, [lessonTitle, currentSection, sectionTitles, context]);
 
-  // Auto-scroll only when a NEW message is added (by length)
+  // ── Load persisted conversation on mount / lesson change ───────────────
+  useEffect(() => {
+    if (!lessonId) {
+      loadedRef.current = true;
+      return;
+    }
+    const stored = loadConversation(lessonId);
+    if (stored.length > 0) {
+      setMessages(
+        stored.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: new Date(m.timestamp),
+        }))
+      );
+    }
+    loadedRef.current = true;
+  }, [lessonId]);
+
+  // ── Persist messages whenever they change ──────────────────────────────
+  useEffect(() => {
+    if (!loadedRef.current || !lessonId) return;
+    const toStore: StoredMessage[] = messages
+      .filter((m) => m.role !== 'system' && !m.isStreaming)
+      .map((m) => ({
+        id: m.id,
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        timestamp: m.timestamp.getTime(),
+      }));
+    saveConversation(lessonId, toStore);
+  }, [messages, lessonId]);
+
+  // ── Handle prefilled message from parent ──────────────────────────────
+  useEffect(() => {
+    if (prefilledMessage) {
+      setInput(prefilledMessage);
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.select?.();
+      }, 200);
+    }
+  }, [prefilledMessage]);
+
+  // ── Auto-scroll when new messages arrive ──────────────────────────────
   const lastCountRef = useRef(0);
   useEffect(() => {
     if (messages.length > lastCountRef.current) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       lastCountRef.current = messages.length;
     } else if (messages.length > 0) {
-      // Still scroll on streaming content update
       chatEndRef.current?.scrollIntoView({ behavior: 'auto' });
     }
   }, [messages]);
 
+  // ── Auto-resize textarea ──────────────────────────────────────────────
   useEffect(() => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -69,18 +148,19 @@ export function SocraticChat({
     }
   }, [input]);
 
-  // Abort in-flight request on unmount
+  // ── Abort in-flight request on unmount ────────────────────────────────
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
     };
   }, []);
 
-  const clearConversation = () => {
+  const doClear = () => {
     abortRef.current?.abort();
     setMessages([]);
     setIsLoading(false);
     setInput('');
+    if (lessonId) clearConversation(lessonId);
   };
 
   const sendMessage = async () => {
@@ -127,13 +207,11 @@ export function SocraticChat({
       return;
     }
 
-    // Real AI call
     setIsLoading(true);
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
-      // Build lesson context for the AI
       const lessonContext = lessonTitle
         ? {
             title: lessonTitle,
@@ -142,10 +220,10 @@ export function SocraticChat({
             module: moduleName,
             tags: tags,
             id: lessonId,
+            currentSection,
           }
         : undefined;
 
-      // Convert chat messages to AI service format
       const aiMessages: AIServiceMessage[] = updatedMessages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -158,9 +236,7 @@ export function SocraticChat({
         lessonContext
       );
 
-      if (!response.body) {
-        throw new Error('No response body');
-      }
+      if (!response.body) throw new Error('No response body');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -204,12 +280,8 @@ export function SocraticChat({
         )
       );
     } catch (error: unknown) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        // User navigated away — do nothing
-        return;
-      }
-      const errorMsg =
-        error instanceof Error ? error.message : 'Unknown error';
+      if (error instanceof Error && error.name === 'AbortError') return;
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
@@ -249,7 +321,11 @@ export function SocraticChat({
     >
       {/* No AI Connected Banner */}
       {!aiConnected && (
-        <div className="bg-yellow-50 dark:bg-yellow-950/30 border-b border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200 text-xs p-2 px-4">
+        <div
+          className="bg-yellow-50 dark:bg-yellow-950/30 border-b
+                     border-yellow-200 dark:border-yellow-800
+                     text-yellow-800 dark:text-yellow-200 text-xs p-2 px-4"
+        >
           ⚠️ AI not connected. Showing demo responses. Go to Settings to connect
           your API key or local Ollama.
         </div>
@@ -268,10 +344,12 @@ export function SocraticChat({
           <div className="ml-auto flex items-center gap-2">
             {messages.length > 0 && (
               <button
-                onClick={clearConversation}
+                onClick={doClear}
                 disabled={isLoading}
                 aria-label="Clear conversation"
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-muted disabled:opacity-50"
+                className="text-xs text-muted-foreground hover:text-foreground
+                           transition-colors inline-flex items-center gap-1
+                           px-2 py-1 rounded hover:bg-muted disabled:opacity-50"
               >
                 <Trash2 className="size-3" />
                 Clear
@@ -344,10 +422,12 @@ export function SocraticChat({
       <div className="border-t border-border p-3 bg-card">
         {messages.length > 0 && variant === 'panel' && (
           <button
-            onClick={clearConversation}
+            onClick={doClear}
             disabled={isLoading}
             aria-label="Clear conversation"
-            className="mb-2 text-xs text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-muted disabled:opacity-50"
+            className="mb-2 text-xs text-muted-foreground hover:text-foreground
+                       transition-colors inline-flex items-center gap-1
+                       px-2 py-1 rounded hover:bg-muted disabled:opacity-50"
           >
             <Trash2 className="size-3" />
             Clear conversation

@@ -1,4 +1,5 @@
-﻿import { SYSTEM_PROMPT, buildLessonContext } from './prompts';
+import { SYSTEM_PROMPT, buildLessonContext } from './prompts';
+import { buildContextWindow } from './contextManager';
 import type { AISettings } from './settings';
 
 export interface ChatMessage {
@@ -13,6 +14,12 @@ export interface LessonContext {
   module?: string;
   tags?: string[];
   id?: string;
+  /**
+   * The H2 section title the user is currently viewing (tracked via
+   * IntersectionObserver on the lesson page). Makes AI responses
+   * much more relevant to what the user is reading right now.
+   */
+  currentSection?: string;
 }
 
 /**
@@ -21,7 +28,11 @@ export interface LessonContext {
  * Routes chat completions to the configured AI provider (OpenAI, Groq, or Ollama)
  * using the standard OpenAI-compatible payload format.
  *
- * Always injects the anti-cheat SYSTEM_PROMPT at index 0 and enables streaming.
+ * Features:
+ * - Injects the anti-cheat SYSTEM_PROMPT at index 0
+ * - Applies lesson context (title, description, current section, content)
+ * - Enforces a token budget via sliding window (buildContextWindow)
+ * - Always streams responses
  */
 export async function streamChatCompletion(
   messages: ChatMessage[],
@@ -30,7 +41,9 @@ export async function streamChatCompletion(
   lessonContext?: LessonContext
 ): Promise<Response> {
   if (settings.provider === 'none') {
-    throw new Error('No AI provider configured. Please go to Settings to connect an AI provider.');
+    throw new Error(
+      'No AI provider configured. Please go to Settings to connect an AI provider.'
+    );
   }
 
   // Build the full system prompt with lesson context
@@ -40,11 +53,13 @@ export async function streamChatCompletion(
     fullSystemPrompt = `${SYSTEM_PROMPT}\n\n${contextInfo}`;
   }
 
-  // Inject system prompt at index 0
-  const payloadMessages: ChatMessage[] = [
-    { role: 'system', content: fullSystemPrompt },
-    ...messages,
-  ];
+  const systemMessage: ChatMessage = {
+    role: 'system',
+    content: fullSystemPrompt,
+  };
+
+  // Apply token budget via sliding window
+  const payloadMessages = buildContextWindow(systemMessage, messages);
 
   // Determine endpoint and headers based on provider
   let url: string;
@@ -61,16 +76,16 @@ export async function streamChatCompletion(
       url = 'https://api.groq.com/openai/v1/chat/completions';
       headers['Authorization'] = `Bearer ${settings.apiKey}`;
       break;
-    case 'ollama':
+    case 'ollama': {
       // Normalize base URL: remove trailing slash to avoid double slashes
       const normalizedBaseUrl = settings.baseUrl.replace(/\/+$/, '');
       url = `${normalizedBaseUrl}/chat/completions`;
-      // Ollama doesn't need auth, but we can optionally send a dummy header
-      // Some Ollama setups might need this, so we allow it if apiKey is set
+      // Ollama doesn't need auth; honor explicit apiKey if provided
       if (settings.apiKey) {
         headers['Authorization'] = `Bearer ${settings.apiKey}`;
       }
       break;
+    }
     default:
       throw new Error(`Unsupported AI provider: ${settings.provider}`);
   }
@@ -94,17 +109,22 @@ export async function streamChatCompletion(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`AI Provider Error (${response.status}): ${errorText}`);
+      throw new Error(
+        `AI Provider Error (${response.status}): ${errorText}`
+      );
     }
 
     return response;
   } catch (error: unknown) {
     // Network errors (CORS, offline, Ollama not running) give unhelpful "Failed to fetch" messages
-    if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+    if (
+      error instanceof TypeError &&
+      error.message.includes('Failed to fetch')
+    ) {
       throw new Error(
         `Network error connecting to ${settings.provider}. ` +
-        `If using Ollama, make sure it's running with CORS enabled: ` +
-        `$env:OLLAMA_ORIGINS="*"; ollama serve`
+          `If using Ollama, make sure it's running with CORS enabled: ` +
+          `$env:OLLAMA_ORIGINS="*"; ollama serve`
       );
     }
     throw error;

@@ -1,5 +1,11 @@
-﻿import { describe, it, expect } from 'vitest';
-import { SYSTEM_PROMPT, buildLessonContext } from './prompts';
+import { describe, it, expect } from 'vitest';
+import {
+  SYSTEM_PROMPT,
+  buildLessonContext,
+  extractSectionTitles,
+  truncateAtSectionBoundary,
+  buildLearningObjectives,
+} from './prompts';
 
 describe('SYSTEM_PROMPT', () => {
   it('is exported as a non-empty string', () => {
@@ -8,7 +14,9 @@ describe('SYSTEM_PROMPT', () => {
   });
 
   it('contains instructions about not giving direct answers', () => {
-    expect(SYSTEM_PROMPT).toMatch(/NEVER give|never give|do not give|don't give/i);
+    expect(SYSTEM_PROMPT).toMatch(
+      /NEVER give|never give|do not give|don't give/i
+    );
   });
 
   it('contains Socratic tutoring guidance', () => {
@@ -17,6 +25,72 @@ describe('SYSTEM_PROMPT', () => {
 
   it('mentions refusing to solve challenges directly', () => {
     expect(SYSTEM_PROMPT).toMatch(/refuse|MUST refuse/i);
+  });
+});
+
+describe('extractSectionTitles', () => {
+  it('returns H2 titles in order', () => {
+    const md = `# Intro\nSome text.\n\n## Why Learn?\n\nContent.\n\n## How It Works\n\nMore.\n\n### Subsection`;
+    expect(extractSectionTitles(md)).toEqual(['Why Learn?', 'How It Works']);
+  });
+
+  it('returns empty array when no H2s', () => {
+    expect(extractSectionTitles('# Just a title\n\nParagraph.')).toEqual([]);
+  });
+
+  it('handles empty/undefined input', () => {
+    expect(extractSectionTitles('')).toEqual([]);
+  });
+});
+
+describe('truncateAtSectionBoundary', () => {
+  it('returns content unchanged when under budget', () => {
+    const md = '# Title\n\nShort content.';
+    const { content, wasTruncated } = truncateAtSectionBoundary(md, 1000);
+    expect(content).toBe(md);
+    expect(wasTruncated).toBe(false);
+  });
+
+  it('cuts at section boundary, not mid-section', () => {
+    const section1 = '\n\n## First Section\n\n' + 'a'.repeat(1200);
+    const section2 = '\n\n## Second Section\n\n' + 'b'.repeat(1200);
+    const md = '# Title' + section1 + section2;
+
+    // Budget fits section1 but not section1+section2
+    const { content, wasTruncated } = truncateAtSectionBoundary(md, 1500);
+    expect(wasTruncated).toBe(true);
+    expect(content).toContain('First Section');
+    expect(content).not.toContain('Second Section');
+    expect(content).toContain('[content truncated for context window]');
+  });
+
+  it('handles content with no H2s by treating as single section', () => {
+    const md = 'x'.repeat(3000);
+    const { content, wasTruncated } = truncateAtSectionBoundary(md, 2500);
+    expect(wasTruncated).toBe(true);
+    expect(content.length).toBeLessThan(3000);
+    expect(content).toContain('[content truncated for context window]');
+  });
+});
+
+describe('buildLearningObjectives', () => {
+  it('uses description as first objective', () => {
+    const result = buildLearningObjectives({
+      title: 'T',
+      description: 'Learn about X',
+    });
+    expect(result[0]).toBe('Learn about X');
+  });
+
+  it('includes H2 titles up to 6', () => {
+    const sections = Array.from({ length: 8 }, (_, i) => `## Section ${i}`).join(
+      '\n\n'
+    );
+    const result = buildLearningObjectives({ title: 'T', content: sections });
+    // 6 sections + description? description is undefined so 6 total
+    expect(result.length).toBeLessThanOrEqual(7);
+    expect(result.some((o) => o.includes('Section 0'))).toBe(true);
+    expect(result.some((o) => o.includes('Section 7'))).toBe(false);
   });
 });
 
@@ -105,5 +179,30 @@ describe('buildLessonContext', () => {
     const result = buildLessonContext(ctx);
     expect(result).toContain('Minimal Lesson');
     expect(result).toContain('CURRENT LESSON CONTEXT');
+  });
+
+  it('includes current section when provided', () => {
+    const ctx = {
+      title: 'Test Lesson',
+      currentSection: 'How Programs Work',
+    };
+
+    const result = buildLessonContext(ctx);
+    expect(result).toContain('How Programs Work');
+    expect(result).toMatch(/currently viewing section/i);
+  });
+
+  it('includes learning objectives', () => {
+    const ctx = {
+      title: 'Test Lesson',
+      description: 'Understand variables',
+      content: '# Title\n\n## What Are Variables?\n\n## Scope',
+    };
+
+    const result = buildLessonContext(ctx);
+    expect(result).toContain('Learning Objectives:');
+    expect(result).toContain('Understand variables');
+    expect(result).toContain('What Are Variables?');
+    expect(result).toContain('Scope');
   });
 });
