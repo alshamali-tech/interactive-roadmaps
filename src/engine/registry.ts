@@ -20,6 +20,7 @@ import { VideoWidget } from '@/components/widgets/VideoWidget';
 import { Mutator } from '@/components/universal/Mutator';
 import { NodeGraph } from '@/components/universal/NodeGraph';
 import { TradeOff } from '@/components/universal/TradeOff';
+import { TcpIpHandshake } from '@/components/custom/TcpIpHandshake';
 
 // ─── Base Types ──────────────────────────────────────────────────────────────
 
@@ -202,4 +203,5 @@ widgetRegistry
   .register('video', VideoWidget)
   .register('mutator', Mutator)
   .register('node-graph', NodeGraph)
-  .register('trade-off', TradeOff);
+  .register('trade-off', TradeOff)
+  .register('tcp-ip', TcpIpHandshake);

@@ -11,6 +11,7 @@
  */
 
 import type { WidgetProps } from '@/engine/registry';
+import type { TcpIpHandshakeProps } from '@/components/custom/TcpIpHandshake';
 
 // ─── Widget System ──────────────────────────────────────────────────────────
 
@@ -319,6 +320,12 @@ export interface TradeOffWidget {
   props: TradeOffProps;
 }
 
+export interface TcpIpHandshakeWidget {
+  id: string;
+  type: 'tcp-ip';
+  props: TcpIpHandshakeProps;
+}
+
 /**
  * Discriminated union of all widget configurations.
  * Use `widget.type` to narrow the type at runtime.
@@ -333,7 +340,8 @@ export type WidgetConfig =
   | SandboxWidget
   | MutatorWidget
   | NodeGraphWidget
-  | TradeOffWidget;
+  | TradeOffWidget
+  | TcpIpHandshakeWidget;
 
 // ─── Lesson ─────────────────────────────────────────────────────────────────
 
