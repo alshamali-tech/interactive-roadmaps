@@ -1,4 +1,5 @@
 import type { Lesson, Module, Track } from './schema';
+import { module01Lessons } from '@/content/ai-engineer/module-01-foundations';
 
 // ─── Lessons ────────────────────────────────────────────────────────────────
 
@@ -507,6 +508,16 @@ const fundamentalsModule: Module = {
   lessons: [lesson1, lesson2, lesson3],
 };
 
+// ─── AI Engineer Module ─────────────────────────────────────────────────────
+
+const aiFoundationsModule: Module = {
+  id: 'module-ai-foundations',
+  title: 'Module 1: Foundations',
+  description:
+    'Core concepts every AI engineer needs — from tokens and context windows to networking fundamentals.',
+  lessons: module01Lessons,
+};
+
 // ─── Track ──────────────────────────────────────────────────────────────────
 
 export const tracks: Track[] = [
@@ -516,6 +527,13 @@ export const tracks: Track[] = [
     description:
       'A comprehensive learning path from programming basics to full-stack mastery.',
     modules: [fundamentalsModule],
+  },
+  {
+    id: 'ai-engineer',
+    title: 'AI Engineer Roadmap',
+    description:
+      'Master the skills needed to build, deploy, and scale AI-powered applications.',
+    modules: [aiFoundationsModule],
   },
 ];
 
