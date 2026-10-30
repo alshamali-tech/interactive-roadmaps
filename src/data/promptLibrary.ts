@@ -140,7 +140,7 @@ export function getLessonPrompts(opts: {
       id: 'explain_section',
       label: `Explain "${truncate(opts.currentSection, 24)}"`,
       icon: '📖',
-      template: `I'm reading the "${opts.currentSection}" section right now and some parts are unclear. Can you walk me through the key ideas of this section using a concrete example?`,
+      template: `I'm reading the "${opts.currentSection}" section right now and some parts are unclear. Can you help me understand the key idea by asking me a question that tests whether I really get it?`,
       context: 'global',
     });
   }
