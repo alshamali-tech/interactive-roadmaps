@@ -130,7 +130,44 @@ export function MarkdownRenderer({
         </code>
       );
     },
-  }), [handleCopyCode]);
+    widget: ({ node, ...props }: any) => {
+      const widgetId = props.id as string | undefined;
+
+      if (!widgetId) {
+        return (
+          <div className="not-prose p-4 bg-red-100 text-red-800 rounded-lg border border-red-300 text-sm">
+            ⚠️ Widget Error: No <code>id</code> attribute provided on &lt;widget&gt; tag.
+          </div>
+        );
+      }
+
+      const widgetConfig = widgets.find((w) => w.id === widgetId);
+
+      if (!widgetConfig) {
+        return (
+          <div className="not-prose p-4 bg-red-100 text-red-800 rounded-lg border border-red-300 text-sm">
+            ⚠️ Widget Error: Configuration for ID <code>{widgetId}</code> not found in lesson data.
+          </div>
+        );
+      }
+
+      const WidgetComponent = widgetRegistry.resolve(widgetConfig);
+
+      if (!WidgetComponent) {
+        return (
+          <div className="not-prose p-4 bg-yellow-100 text-yellow-800 rounded-lg border border-yellow-300 text-sm">
+            ⚠️ Widget Error: Component type <code>{widgetConfig.type}</code> is not registered.
+          </div>
+        );
+      }
+
+      return (
+        <div className="not-prose my-6 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+          <WidgetComponent {...widgetConfig.props} />
+        </div>
+      );
+    },
+  }), [handleCopyCode, widgets]);
 
   // Split markdown into segments (text, widgets, AI prompts)
   const segments = useMemo(() => {

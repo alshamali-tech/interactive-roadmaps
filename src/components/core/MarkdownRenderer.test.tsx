@@ -137,6 +137,73 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByText('unknown')).toBeInTheDocument();
   });
 
+  describe('<widget> tag injection', () => {
+    it('renders widget component when <widget> tag with valid id is used', () => {
+      const markdown = '<widget id="html-tag-sandbox"></widget>';
+      const widgets: WidgetConfig[] = [
+        {
+          id: 'html-tag-sandbox',
+          type: 'sandbox',
+          props: {
+            inputType: 'text',
+            outputType: 'text',
+            initialState: 'test',
+          },
+        },
+      ];
+
+      render(<MarkdownRenderer markdown={markdown} widgets={widgets} />);
+
+      expect(screen.getByTestId('mock-sandbox')).toBeInTheDocument();
+    });
+
+    it('shows red error when <widget> tag id is not found in widgets array', () => {
+      const markdown = '<widget id="nonexistent-id"></widget>';
+      render(<MarkdownRenderer markdown={markdown} widgets={[]} />);
+
+      expect(screen.getByText(/Widget Error: Configuration for ID/)).toBeInTheDocument();
+      expect(screen.getByText('nonexistent-id')).toBeInTheDocument();
+    });
+
+    it('shows yellow error when widget type is not registered in the registry', () => {
+      const markdown = '<widget id="unregistered-type-widget"></widget>';
+      const widgets = [
+        {
+          id: 'unregistered-type-widget',
+          type: 'some-unregistered-type',
+          props: {},
+        },
+      ] as unknown as WidgetConfig[];
+
+      render(<MarkdownRenderer markdown={markdown} widgets={widgets} />);
+
+      expect(screen.getByText(/Widget Error: Component type/)).toBeInTheDocument();
+      expect(screen.getByText('some-unregistered-type')).toBeInTheDocument();
+    });
+
+    it('wraps widget in not-prose div to prevent typography interference', () => {
+      const markdown = '<widget id="prose-test-sandbox"></widget>';
+      const widgets: WidgetConfig[] = [
+        {
+          id: 'prose-test-sandbox',
+          type: 'sandbox',
+          props: {
+            inputType: 'text',
+            outputType: 'text',
+            initialState: 'test',
+          },
+        },
+      ];
+
+      const { container } = render(<MarkdownRenderer markdown={markdown} widgets={widgets} />);
+
+      // The widget wrapper should have not-prose class
+      const widgetWrapper = container.querySelector('.not-prose');
+      expect(widgetWrapper).toBeInTheDocument();
+      expect(widgetWrapper).toHaveClass('my-6', 'p-4', 'rounded-xl');
+    });
+  });
+
   it('injects AI prompts after every 2nd section when showAITutor is true', () => {
     const markdown = `## Section 1\n\nContent 1\n\n## Section 2\n\nContent 2\n\n## Section 3\n\nContent 3\n\n## Section 4\n\nContent 4`;
     render(<MarkdownRenderer markdown={markdown} widgets={[]} showAITutor={true} />);
