@@ -4,9 +4,12 @@
 
 [![Build Status](https://img.shields.io/badge/status-work%20in%20progress-yellow)]()
 [![Phase](https://img.shields.io/badge/phase-4%20of%207-blue)]()
-[![Live Demo](https://img.shields.io/badge/live%20demo-visit%20site-blue)]()
-[![Hosting](https://img.shields.io/badge/hosted%20on-Cloudflare%20Pages-orange)]()
+[![Live Demo](https://img.shields.io/badge/live%20demo-visit%20site-blue)](https://interactive-roadmaps.pages.dev/)
+[![Hosting](https://img.shields.io/badge/hosted%20on-Cloudflare%20Pages-orange)](https://interactive-roadmaps.pages.dev/)
 [![License](https://img.shields.io/badge/license-MIT-green)]()
+
+> ### 🌐 [**→ Try the Live Demo**](https://interactive-roadmaps.pages.dev/)
+> Experience the platform in your browser — no installation required. Connect your own Ollama or API key in Settings to unlock the AI Tutor.
 
 ---
 
@@ -33,7 +36,7 @@ Most technical learning platforms suffer from one of two problems:
 ## ✨ Key Features
 
 ### 🏗️ Core Engine
-- **Zero-Backend Architecture** — Hosted entirely on Cloudflare Pages. All state managed locally via Zustand and IndexedDB.
+- **Zero-Backend Architecture** — Hosted entirely on Cloudflare Pages ([live demo](https://interactive-roadmaps.pages.dev/)). All state managed locally via Zustand and IndexedDB.
 - **Bring Your Own Compute (BYOK)** — Connect your own OpenAI, Groq, or local Ollama instance. No API keys stored on our servers.
 - **Offline-First Design** — Works without an internet connection once loaded (with local Ollama).
 
@@ -109,7 +112,7 @@ graph TD
 - **Routing:** React Router
 - **Content:** react-markdown + rehype-raw
 - **Code Editor:** Monaco Editor
-- **Hosting:** Cloudflare Pages (Free tier)
+- **Hosting:** Cloudflare Pages ([live demo](https://interactive-roadmaps.pages.dev/))
 
 ---
 
@@ -135,6 +138,8 @@ npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+> 💡 **Don't want to install anything?** Try the [live demo](https://interactive-roadmaps.pages.dev/) instead — it's the same codebase running on Cloudflare Pages.
 
 ### Connecting Your AI
 
