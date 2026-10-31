@@ -81,7 +81,7 @@ export function MarkdownRenderer({
 
   // Custom components for react-markdown
   const components: Components = useMemo(() => ({
-    h1: ({ children, ...props }) => (
+    h1: ({ children, node: _node, ...props }) => (
       <h1
         {...props}
         data-section-title={typeof children === 'string' ? children : undefined}
@@ -90,7 +90,7 @@ export function MarkdownRenderer({
         {children}
       </h1>
     ),
-    h2: ({ children, ...props }) => {
+    h2: ({ children, node: _node, ...props }) => {
       const title = typeof children === 'string' ? children : undefined;
       return (
         <h2
@@ -102,7 +102,7 @@ export function MarkdownRenderer({
         </h2>
       );
     },
-    h3: ({ children, ...props }) => (
+    h3: ({ children, node: _node, ...props }) => (
       <h3
         {...props}
         data-section-title={typeof children === 'string' ? children : undefined}
@@ -112,7 +112,7 @@ export function MarkdownRenderer({
       </h3>
     ),
     pre: (props) => <CodeBlock {...props} handleCopyCode={handleCopyCode} />,
-    code: ({ className, children, ...props }) => {
+    code: ({ className, children, node: _node, ...props }) => {
       const isInline = !className;
       if (isInline) {
         return (

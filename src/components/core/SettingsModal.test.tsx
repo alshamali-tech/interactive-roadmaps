@@ -12,6 +12,7 @@ describe('SettingsModal', () => {
         apiKey: '',
         baseUrl: 'http://localhost:11434/v1',
         model: '',
+        generationMode: 'focused',
       },
       isAIConnected: false,
     });
@@ -22,6 +23,47 @@ describe('SettingsModal', () => {
     expect(screen.getByRole('tab', { name: /Cloud Providers/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Local Ollama/i })).toBeInTheDocument();
     expect(screen.getByText('Provider')).toBeInTheDocument();
+  });
+
+  it('renders Content Generation Mode section', () => {
+    render(<SettingsModal open={true} onClose={() => {}} />);
+    expect(screen.getByText('Content Generation Mode')).toBeInTheDocument();
+    expect(screen.getByText('Focused Content')).toBeInTheDocument();
+    expect(screen.getByText('Structured JSON')).toBeInTheDocument();
+  });
+
+  it('focused mode is selected by default', () => {
+    render(<SettingsModal open={true} onClose={() => {}} />);
+    const focusedRadio = screen.getByDisplayValue('focused');
+    expect(focusedRadio).toBeChecked();
+  });
+
+  it('switching to structured mode updates draft state', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    const structuredRadio = screen.getByDisplayValue('structured');
+    await user.click(structuredRadio);
+    expect(structuredRadio).toBeChecked();
+  });
+
+  it('saves generationMode to store when Save is clicked', async () => {
+    const user = userEvent.setup();
+    render(<SettingsModal open={true} onClose={() => {}} />);
+
+    // Select structured mode
+    const structuredRadio = screen.getByDisplayValue('structured');
+    await user.click(structuredRadio);
+
+    // Fill required fields
+    const openaiRadio = screen.getByDisplayValue('openai');
+    await user.click(openaiRadio);
+    await user.type(screen.getByLabelText('API Key'), 'sk-test');
+    await user.type(screen.getByLabelText('Model'), 'gpt-4');
+
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    expect(useSettingsStore.getState().aiSettings.generationMode).toBe('structured');
   });
 
   it('API key input has type password by default', () => {

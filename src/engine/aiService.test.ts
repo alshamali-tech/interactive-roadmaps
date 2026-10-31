@@ -7,6 +7,7 @@ const baseSettings: AISettings = {
   apiKey: 'sk-test-key',
   baseUrl: 'http://localhost:11434/v1',
   model: 'gpt-4o-mini',
+  generationMode: 'focused',
 };
 
 describe('streamChatCompletion', () => {

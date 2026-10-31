@@ -4,6 +4,7 @@ import {
   buildLessonContext,
   extractSectionTitles,
   truncateAtSectionBoundary,
+  truncateSmart,
   buildLearningObjectives,
 } from './prompts';
 
@@ -70,6 +71,60 @@ describe('truncateAtSectionBoundary', () => {
     expect(wasTruncated).toBe(true);
     expect(content.length).toBeLessThan(3000);
     expect(content).toContain('[content truncated for context window]');
+  });
+});
+
+describe('truncateSmart', () => {
+  it('returns full content when under budget', () => {
+    const text = 'Short text that fits.';
+    const result = truncateSmart(text, 100);
+    expect(result.content).toBe(text);
+    expect(result.wasTruncated).toBe(false);
+    expect(result.strategy).toBe('full');
+  });
+
+  it('handles empty input', () => {
+    const result = truncateSmart('', 100);
+    expect(result.content).toBe('');
+    expect(result.strategy).toBe('empty');
+  });
+
+  it('truncates at H2 sections when markdown has headings', () => {
+    const section1 = '\n\n## First Section\n\n' + 'a'.repeat(500);
+    const section2 = '\n\n## Second Section\n\n' + 'b'.repeat(500);
+    const md = '# Title' + section1 + section2;
+
+    const result = truncateSmart(md, 800);
+    expect(result.wasTruncated).toBe(true);
+    expect(result.strategy).toBe('h2-sections');
+    expect(result.content).toContain('First Section');
+  });
+
+  it('falls back to paragraph boundaries for plain text', () => {
+    const para1 = 'First paragraph with some content. '.repeat(10);
+    const para2 = 'Second paragraph with more content. '.repeat(10);
+    const text = para1 + '\n\n' + para2;
+
+    const result = truncateSmart(text, 200);
+    expect(result.wasTruncated).toBe(true);
+    expect(result.strategy).toBe('paragraphs');
+    expect(result.content).toContain('First paragraph');
+  });
+
+  it('falls back to sentence boundaries for long single paragraph', () => {
+    const sentences = Array.from({ length: 20 }, (_, i) => `Sentence number ${i + 1} here.`).join(' ');
+    const result = truncateSmart(sentences, 200);
+    expect(result.wasTruncated).toBe(true);
+    expect(['sentences', 'word-boundary', 'hard-cut']).toContain(result.strategy);
+    // Should end at a sentence boundary if possible
+    expect(result.content).toMatch(/[.!?].*\[content truncated\]/);
+  });
+
+  it('falls back to word boundary for very long single sentence', () => {
+    const longWord = 'word '.repeat(200);
+    const result = truncateSmart(longWord, 200);
+    expect(result.wasTruncated).toBe(true);
+    expect(['word-boundary', 'hard-cut']).toContain(result.strategy);
   });
 });
 

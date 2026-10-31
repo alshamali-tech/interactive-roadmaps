@@ -37,6 +37,7 @@ describe('useAIStream', () => {
         apiKey: 'sk-test',
         baseUrl: 'http://localhost:11434/v1',
         model: 'gpt-4o-mini',
+        generationMode: 'focused',
       },
       isAIConnected: true,
     });

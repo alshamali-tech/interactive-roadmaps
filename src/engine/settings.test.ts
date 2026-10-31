@@ -9,6 +9,7 @@ describe('Settings Store', () => {
         apiKey: '',
         baseUrl: 'http://localhost:11434/v1',
         model: '',
+        generationMode: 'focused',
       },
       isAIConnected: false,
     });
@@ -68,10 +69,10 @@ describe('Settings Store', () => {
   });
 
   it('standalone isAIConnected function works correctly', () => {
-    expect(isAIConnected({ provider: 'none', apiKey: '', baseUrl: '', model: '' })).toBe(false);
-    expect(isAIConnected({ provider: 'openai', apiKey: 'sk-test', baseUrl: '', model: 'gpt-4o-mini' })).toBe(true);
-    expect(isAIConnected({ provider: 'groq', apiKey: 'gsk_test', baseUrl: '', model: 'llama-3.1-8b-instant' })).toBe(true);
-    expect(isAIConnected({ provider: 'ollama', apiKey: '', baseUrl: 'http://localhost:11434/v1', model: 'llama3' })).toBe(true);
-    expect(isAIConnected({ provider: 'openai', apiKey: '', baseUrl: '', model: 'gpt-4o-mini' })).toBe(false);
+    expect(isAIConnected({ provider: 'none', apiKey: '', baseUrl: '', model: '', generationMode: 'focused' })).toBe(false);
+    expect(isAIConnected({ provider: 'openai', apiKey: 'sk-test', baseUrl: '', model: 'gpt-4o-mini', generationMode: 'focused' })).toBe(true);
+    expect(isAIConnected({ provider: 'groq', apiKey: 'gsk_test', baseUrl: '', model: 'llama-3.1-8b-instant', generationMode: 'structured' })).toBe(true);
+    expect(isAIConnected({ provider: 'ollama', apiKey: '', baseUrl: 'http://localhost:11434/v1', model: 'llama3', generationMode: 'focused' })).toBe(true);
+    expect(isAIConnected({ provider: 'openai', apiKey: '', baseUrl: '', model: 'gpt-4o-mini', generationMode: 'structured' })).toBe(false);
   });
 });

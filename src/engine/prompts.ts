@@ -78,6 +78,80 @@ export function truncateAtSectionBoundary(
 }
 
 /**
+ * Smart truncation for arbitrary text (markdown or plain).
+ * Tries progressively finer boundary strategies to avoid cutting mid-thought:
+ *   1. Markdown H2 sections (## Heading)
+ *   2. Paragraph breaks (\n\n)
+ *   3. Sentence boundaries (. ! ?)
+ *   4. Word boundary (last space before maxChars)
+ *   5. Hard cut (last resort)
+ *
+ * Used by the course generator to slice source content without losing context.
+ */
+export function truncateSmart(
+  text: string,
+  maxChars: number = 12000
+): { content: string; wasTruncated: boolean; strategy: string } {
+  if (!text) {
+    return { content: '', wasTruncated: false, strategy: 'empty' };
+  }
+  if (text.length <= maxChars) {
+    return { content: text, wasTruncated: false, strategy: 'full' };
+  }
+
+  // Strategy 1: Markdown H2 sections
+  const hasH2 = /^##\s+/m.test(text);
+  if (hasH2) {
+    const { content, wasTruncated } = truncateAtSectionBoundary(text, maxChars);
+    // Only use this if we got a reasonable amount of content (>50% of maxChars)
+    if (content.length > maxChars * 0.3) {
+      return { content, wasTruncated, strategy: 'h2-sections' };
+    }
+  }
+
+  // Strategy 2: Paragraph boundaries (\n\n)
+  const paragraphs = text.split(/\n\n+/);
+  if (paragraphs.length > 1) {
+    let result = '';
+    for (const para of paragraphs) {
+      // Allow first paragraph even if slightly over budget
+      if (result.length > 0 && result.length + para.length + 2 > maxChars) break;
+      // Skip if first paragraph is way too large (let finer strategies handle it)
+      if (result.length === 0 && para.length > maxChars * 2) break;
+      result += (result ? '\n\n' : '') + para;
+    }
+    // Use paragraph strategy if we got reasonable content OR at least one paragraph with truncation
+    if (result.length > maxChars * 0.3 || (result.length > 0 && paragraphs.length > 1)) {
+      const wasTruncated = result.length < text.length;
+      if (wasTruncated) result += '\n\n... [content truncated]';
+      return { content: result, wasTruncated, strategy: 'paragraphs' };
+    }
+  }
+
+  // Strategy 3: Sentence boundaries
+  const cutRegion = text.slice(0, maxChars);
+  const sentenceEnd = cutRegion.search(/[.!?](?:\s|$)(?!.*[.!?](?:\s|$))/);
+  if (sentenceEnd > maxChars * 0.5) {
+    const result = cutRegion.slice(0, sentenceEnd + 1) + '\n\n... [content truncated]';
+    return { content: result, wasTruncated: true, strategy: 'sentences' };
+  }
+
+  // Strategy 4: Word boundary
+  const lastSpace = cutRegion.lastIndexOf(' ');
+  if (lastSpace > maxChars * 0.5) {
+    const result = cutRegion.slice(0, lastSpace) + '... [content truncated]';
+    return { content: result, wasTruncated: true, strategy: 'word-boundary' };
+  }
+
+  // Strategy 5: Hard cut (last resort)
+  return {
+    content: cutRegion + '... [content truncated]',
+    wasTruncated: true,
+    strategy: 'hard-cut',
+  };
+}
+
+/**
  * Derive learning objectives from description + H2 section titles.
  * Gives the AI a clear "by the end of this lesson" framing.
  */

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import {
   useSettingsStore,
   type AIProvider,
+  type GenerationMode,
 } from '@/engine/settings';
 
 interface SettingsModalProps {
@@ -27,6 +28,7 @@ interface Draft {
   apiKey: string;
   baseUrl: string;
   model: string;
+  generationMode: GenerationMode;
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -446,6 +448,52 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </div>
               </div>
             )}
+
+            {/* Generation Mode — visible in all tabs */}
+            <fieldset className="pt-4 border-t border-border">
+              <legend className="block text-sm font-medium text-foreground mb-1.5">
+                Content Generation Mode
+              </legend>
+              <p className="text-xs text-muted-foreground mb-3">
+                Controls how the AI generates lesson content. Choose based on your model&apos;s capability.
+              </p>
+              <div className="space-y-2">
+                <label className={`flex items-start gap-2.5 text-sm text-foreground cursor-pointer hover:bg-muted/50 rounded-lg px-3 py-2.5 -mx-1 transition-colors border ${draft.generationMode === 'focused' ? 'border-primary/50 bg-primary/5' : 'border-border'}`}>
+                  <input
+                    type="radio"
+                    name="generationMode"
+                    value="focused"
+                    checked={draft.generationMode === 'focused'}
+                    onChange={() => updateDraft({ generationMode: 'focused' })}
+                    className="accent-primary size-4 mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium text-foreground">Focused Content</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      AI writes natural markdown with widget markers. Better content quality.
+                      <span className="text-primary font-medium"> Works with any model.</span>
+                    </div>
+                  </div>
+                </label>
+                <label className={`flex items-start gap-2.5 text-sm text-foreground cursor-pointer hover:bg-muted/50 rounded-lg px-3 py-2.5 -mx-1 transition-colors border ${draft.generationMode === 'structured' ? 'border-primary/50 bg-primary/5' : 'border-border'}`}>
+                  <input
+                    type="radio"
+                    name="generationMode"
+                    value="structured"
+                    checked={draft.generationMode === 'structured'}
+                    onChange={() => updateDraft({ generationMode: 'structured' })}
+                    className="accent-primary size-4 mt-0.5"
+                  />
+                  <div>
+                    <div className="font-medium text-foreground">Structured JSON</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      AI outputs JSON directly. Faster but needs strong models.
+                      <span className="text-amber-600 dark:text-amber-400 font-medium"> Recommended for GPT-4, Claude, etc.</span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </fieldset>
 
             {/* Validation Errors */}
             {errors.length > 0 && (

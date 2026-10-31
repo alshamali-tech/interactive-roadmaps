@@ -4,6 +4,13 @@ import {
   parsePlanResponse,
   parseLessonResponse,
   GeneratedCourseSchema,
+  buildPlanUserPrompt,
+  buildLessonUserPrompt,
+  FOCUSED_SYSTEM_PROMPT,
+  buildFocusedUserPrompt,
+  type CoursePlan,
+  type LessonPlan,
+  type GeneratedLesson,
 } from '@/engine/generatorSchema';
 
 // ───────────────────────────────────────────────────────────────
@@ -65,6 +72,7 @@ describe('parsePlanResponse', () => {
       {
         id: 'lesson-1',
         title: 'First Lesson',
+        suggestedDifficulty: 'beginner',
         keyPoints: ['Point 1', 'Point 2'],
         widgetSuggestions: [
           { type: 'sandbox', purpose: 'Try the concept' },
@@ -78,6 +86,16 @@ describe('parsePlanResponse', () => {
     expect(result.title).toBe('Test Course');
     expect(result.lessons).toHaveLength(1);
     expect(result.lessons[0].keyPoints).toEqual(['Point 1', 'Point 2']);
+    expect(result.lessons[0].suggestedDifficulty).toBe('beginner');
+  });
+
+  it('defaults suggestedDifficulty to beginner when omitted', () => {
+    const planWithoutDifficulty = {
+      ...validPlan,
+      lessons: [{ id: 'lesson-1', title: 'Test', keyPoints: ['P1'] }],
+    };
+    const result = parsePlanResponse(JSON.stringify(planWithoutDifficulty));
+    expect(result.lessons[0].suggestedDifficulty).toBe('beginner');
   });
 
   it('strips markdown fences before parsing', () => {
@@ -105,7 +123,7 @@ describe('parsePlanResponse', () => {
 });
 
 // ───────────────────────────────────────────────────────────────
-// parseLessonResponse (Stage 2)
+// parseLessonResponse (Stage 2 — structured mode)
 // ───────────────────────────────────────────────────────────────
 
 describe('parseLessonResponse', () => {
@@ -275,7 +293,7 @@ describe('GeneratedCourseSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts valid trade_off widget', () => {
+  it('accepts valid trade-off widget', () => {
     const result = GeneratedCourseSchema.safeParse({
       title: 'Test',
       description: 'Test',
@@ -287,7 +305,7 @@ describe('GeneratedCourseSchema', () => {
             widgets: [
               {
                 id: 'w1',
-                type: 'trade_off',
+                type: 'trade-off',
                 props: {
                   scenario: 'Pick one',
                   options: [
@@ -297,7 +315,7 @@ describe('GeneratedCourseSchema', () => {
                       description: 'A desc',
                       pros: ['fast'],
                       cons: ['costly'],
-                      metrics: { cost: 5, performance: 7, complexity: 4 },
+                      metrics: { cost: 5, performance: 7, complexity: 4, scalability: 6 },
                     },
                     {
                       id: 'b',
@@ -305,7 +323,7 @@ describe('GeneratedCourseSchema', () => {
                       description: 'B desc',
                       pros: ['cheap'],
                       cons: ['slow'],
-                      metrics: { cost: 3, performance: 4, complexity: 2 },
+                      metrics: { cost: 3, performance: 4, complexity: 2, scalability: 3 },
                     },
                   ],
                 },
@@ -316,5 +334,220 @@ describe('GeneratedCourseSchema', () => {
       ],
     });
     expect(result.success).toBe(true);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// buildPlanUserPrompt (prompt quality)
+// ───────────────────────────────────────────────────────────────
+
+describe('buildPlanUserPrompt', () => {
+  it('includes suggestedDifficulty in JSON example', () => {
+    const prompt = buildPlanUserPrompt('Some content about backend development', 3);
+    expect(prompt).toContain('"suggestedDifficulty": "beginner"');
+  });
+
+  it('instructs progressive difficulty from beginner to advanced', () => {
+    const prompt = buildPlanUserPrompt('Some content', 3);
+    expect(prompt).toContain('start from absolute fundamentals');
+    expect(prompt).toContain('assume the reader knows NOTHING');
+  });
+
+  it('includes all three widget type guidelines', () => {
+    const prompt = buildPlanUserPrompt('Some content', 3);
+    expect(prompt).toContain('sandbox');
+    expect(prompt).toContain('mutator');
+    expect(prompt).toContain('trade-off');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// buildLessonUserPrompt (structured mode prompt quality)
+// ───────────────────────────────────────────────────────────────
+
+describe('buildLessonUserPrompt', () => {
+  const mockPlan: CoursePlan = {
+    title: 'Test Course',
+    description: 'A test course',
+    lessons: [
+      {
+        id: 'lesson-1',
+        title: 'First Lesson',
+        suggestedDifficulty: 'beginner',
+        keyPoints: ['Point 1'],
+        widgetSuggestions: [{ type: 'sandbox', purpose: 'Try it' }],
+      },
+      {
+        id: 'lesson-2',
+        title: 'Second Lesson',
+        suggestedDifficulty: 'intermediate',
+        keyPoints: ['Point 2'],
+        widgetSuggestions: [],
+      },
+    ],
+  };
+
+  const beginnerLesson: LessonPlan = mockPlan.lessons[0];
+  const intermediateLesson: LessonPlan = mockPlan.lessons[1];
+
+  it('includes beginner audience description for beginner difficulty', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('complete beginner who has NEVER heard of this topic');
+    expect(prompt).toContain('Define EVERY technical term');
+  });
+
+  it('includes intermediate audience description for intermediate difficulty', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, intermediateLesson, [
+      { id: 'lesson-1', title: 'First', metadata: { difficulty: 'beginner', estimatedMinutes: 10, tags: [], version: '1.0.0' }, prerequisites: [], content: { markdown: '# Test', widgets: [] } },
+    ]);
+    expect(prompt).toContain('knows the basics and wants deeper understanding');
+  });
+
+  it('includes WHAT-WHY-HOW pedagogical structure', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('WHAT → WHY → HOW');
+    expect(prompt).toContain('## What Is [Concept]?');
+    expect(prompt).toContain('## Why Does [Concept] Matter?');
+    expect(prompt).toContain('## How Does [Concept] Work?');
+  });
+
+  it('includes good vs bad content examples', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('❌ BAD');
+    expect(prompt).toContain('✅ GOOD');
+    expect(prompt).toContain('restaurant');
+  });
+
+  it('includes zero jargon rule', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('ZERO JARGON RULE');
+    expect(prompt).toContain('Never use a technical term without explaining it first');
+  });
+
+  it('forbids "Building on what you learned" for first lesson', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('FIRST lesson');
+    expect(prompt).toContain('Do NOT reference any previous lessons');
+    expect(prompt).toContain('Start fresh');
+  });
+
+  it('allows referencing previous lessons for non-first lessons', () => {
+    const previousLesson: GeneratedLesson = {
+      id: 'lesson-1',
+      title: 'First',
+      metadata: { difficulty: 'beginner', estimatedMinutes: 10, tags: [], version: '1.0.0' },
+      prerequisites: [],
+      content: { markdown: '# Test', widgets: [] },
+    };
+    const prompt = buildLessonUserPrompt('content', mockPlan, intermediateLesson, [previousLesson]);
+    expect(prompt).toContain('Reference previous lessons naturally');
+    expect(prompt).toContain('Build on those concepts');
+  });
+
+  it('sets difficulty in metadata example from suggestedDifficulty', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('"difficulty": "beginner"');
+  });
+
+  it('requires 800-1200 words of real content', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('800-1200 words');
+  });
+
+  it('includes first paragraph rule', () => {
+    const prompt = buildLessonUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('FIRST PARAGRAPH RULE');
+    expect(prompt).toContain('WHAT this topic is');
+    expect(prompt).toContain('WHY they should care');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Focused mode prompts
+// ───────────────────────────────────────────────────────────────
+
+describe('FOCUSED_SYSTEM_PROMPT', () => {
+  it('instructs the model to output markdown, not JSON', () => {
+    expect(FOCUSED_SYSTEM_PROMPT).toContain('markdown');
+    expect(FOCUSED_SYSTEM_PROMPT).toContain('No JSON');
+  });
+
+  it('mentions widget markers', () => {
+    expect(FOCUSED_SYSTEM_PROMPT).toContain(':::widget');
+  });
+});
+
+describe('buildFocusedUserPrompt', () => {
+  const mockPlan: CoursePlan = {
+    title: 'Test Course',
+    description: 'A test course',
+    lessons: [
+      {
+        id: 'lesson-1',
+        title: 'First Lesson',
+        suggestedDifficulty: 'beginner',
+        keyPoints: ['Point 1', 'Point 2'],
+        widgetSuggestions: [{ type: 'sandbox', purpose: 'Try it' }],
+      },
+    ],
+  };
+
+  const beginnerLesson: LessonPlan = mockPlan.lessons[0];
+
+  it('includes widget marker format examples', () => {
+    const prompt = buildFocusedUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain(':::widget sandbox');
+    expect(prompt).toContain(':::widget mutator');
+    expect(prompt).toContain(':::widget trade-off');
+  });
+
+  it('includes audience description for beginners', () => {
+    const prompt = buildFocusedUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('NEVER heard of this topic');
+    expect(prompt).toContain('analogies');
+  });
+
+  it('forbids "Building on what you learned" for first lesson', () => {
+    const prompt = buildFocusedUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('FIRST lesson');
+    expect(prompt).toContain('zero context');
+  });
+
+  it('includes previous lesson context for non-first lessons', () => {
+    const previousLesson: GeneratedLesson = {
+      id: 'lesson-1',
+      title: 'Intro to Backend',
+      metadata: { difficulty: 'beginner', estimatedMinutes: 10, tags: [], version: '1.0.0' },
+      prerequisites: [],
+      content: {
+        markdown: '# Backend\n\nSome content',
+        widgets: [{ id: 'lesson-1-widget-1', type: 'sandbox', props: { inputType: 'text', outputType: 'text', initialState: 'test' } }],
+      },
+    };
+
+    const mockPlanWith2: CoursePlan = {
+      ...mockPlan,
+      lessons: [
+        mockPlan.lessons[0],
+        { id: 'lesson-2', title: 'Databases', suggestedDifficulty: 'intermediate', keyPoints: ['SQL'], widgetSuggestions: [] },
+      ],
+    };
+
+    const prompt = buildFocusedUserPrompt('content', mockPlanWith2, mockPlanWith2.lessons[1], [previousLesson]);
+    expect(prompt).toContain('PREVIOUS LESSONS');
+    expect(prompt).toContain('Intro to Backend');
+  });
+
+  it('includes content template with section headings', () => {
+    const prompt = buildFocusedUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('## What Is');
+    expect(prompt).toContain('## Why Does It Matter');
+    expect(prompt).toContain('## Key Takeaways');
+  });
+
+  it('instructs the model to output only markdown', () => {
+    const prompt = buildFocusedUserPrompt('content', mockPlan, beginnerLesson, []);
+    expect(prompt).toContain('Output ONLY markdown');
+    expect(prompt).toContain('no JSON');
   });
 });

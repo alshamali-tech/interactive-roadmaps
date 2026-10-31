@@ -9,11 +9,23 @@ import { persist } from 'zustand/middleware';
 
 export type AIProvider = 'none' | 'openai' | 'groq' | 'ollama';
 
+/**
+ * Generation mode controls how the AI produces lesson content.
+ *
+ * - 'focused'  → Two-pass approach: AI writes natural markdown with widget markers,
+ *                then code parses it into JSON. Better content quality, works with
+ *                any model (weak or strong).
+ * - 'structured' → Single-pass JSON: AI outputs valid JSON directly. Faster but
+ *                  requires strong models that can reliably produce nested JSON.
+ */
+export type GenerationMode = 'focused' | 'structured';
+
 export interface AISettings {
   provider: AIProvider;
   apiKey: string;
   baseUrl: string;
   model: string;
+  generationMode: GenerationMode;
 }
 
 interface SettingsState {
@@ -49,6 +61,7 @@ export const useSettingsStore = create<SettingsState>()(
         apiKey: '',
         baseUrl: 'http://localhost:11434/v1',
         model: '',
+        generationMode: 'focused',
       },
       isAIConnected: false,
 
