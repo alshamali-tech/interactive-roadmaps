@@ -18,6 +18,8 @@ import {
   CheckCircle2,
   Flame,
   Hash,
+  Sparkles,
+  FolderOpen,
 } from 'lucide-react';
 import type { Difficulty } from '@/curriculum/schema';
 
@@ -58,6 +60,34 @@ export function Home() {
           </span>
         </div>
       </div>
+
+      {/* Custom Course Generation */}
+      <Card className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border-primary/20">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/20 rounded-lg">
+              <Sparkles className="size-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-xl">Generate Your Own Course</CardTitle>
+              <CardDescription>
+                Transform any article, blog post, or documentation into an interactive learning
+                experience
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex gap-3">
+          <Button onClick={() => navigate('/generate')} className="flex-1">
+            <Sparkles className="size-4 mr-2" />
+            Generate New Course
+          </Button>
+          <Button onClick={() => navigate('/my-courses')} variant="outline" className="flex-1">
+            <FolderOpen className="size-4 mr-2" />
+            My Custom Courses
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Track Cards */}
       <div className="grid md:grid-cols-2 gap-6">

@@ -56,8 +56,9 @@ export async function extractContentFromUrl(url: string): Promise<string> {
  * @throws Error - If text is too short
  */
 export async function extractContentFromText(text: string): Promise<string> {
-  if (text.trim().length < 100) {
+  const trimmedText = text.trim();
+  if (trimmedText.length < 100) {
     throw new Error('Text is too short to generate a meaningful course.');
   }
-  return text.slice(0, 15000);
+  return trimmedText.slice(0, 15000);
 }

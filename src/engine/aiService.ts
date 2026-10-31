@@ -22,35 +22,70 @@ export interface LessonContext {
   currentSection?: string;
 }
 
-/**
- * Unified AI Service Adapter
- *
- * Routes chat completions to the configured AI provider (OpenAI, Groq, or Ollama)
- * using the standard OpenAI-compatible payload format.
- *
- * Features:
- * - Injects the anti-cheat SYSTEM_PROMPT at index 0
- * - Applies lesson context (title, description, current section, content)
- * - Enforces a token budget via sliding window (buildContextWindow)
- * - Always streams responses
- */
+// ───────────────────────────────────────────────────────────────
+// Internal helpers
+// ───────────────────────────────────────────────────────────────
+
+function getEndpointAndHeaders(
+  settings: AISettings
+): { url: string; headers: Record<string, string> } {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  switch (settings.provider) {
+    case 'openai':
+      return {
+        url: 'https://api.openai.com/v1/chat/completions',
+        headers: { ...headers, Authorization: `Bearer ${settings.apiKey}` },
+      };
+    case 'groq':
+      return {
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        headers: { ...headers, Authorization: `Bearer ${settings.apiKey}` },
+      };
+    case 'ollama': {
+      const normalizedBaseUrl = settings.baseUrl.replace(/\/+$/, '');
+      if (settings.apiKey) {
+        headers['Authorization'] = `Bearer ${settings.apiKey}`;
+      }
+      return { url: `${normalizedBaseUrl}/chat/completions`, headers };
+    }
+    case 'none':
+    default:
+      throw new Error(
+        'No AI provider configured. Please go to Settings to connect an AI provider.'
+      );
+  }
+}
+
+function wrapNetworkError(error: unknown, provider: string): unknown {
+  if (
+    error instanceof TypeError &&
+    error.message.includes('Failed to fetch')
+  ) {
+    return new Error(
+      `Network error connecting to ${provider}. ` +
+        `If using Ollama, make sure it's running with CORS enabled: ` +
+        `$env:OLLAMA_ORIGINS="*"; ollama serve`
+    );
+  }
+  return error;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Streaming chat completion (for lesson chat UI)
+// ───────────────────────────────────────────────────────────────
+
 export async function streamChatCompletion(
   messages: ChatMessage[],
   settings: AISettings,
   signal?: AbortSignal,
   lessonContext?: LessonContext
 ): Promise<Response> {
-  if (settings.provider === 'none') {
-    throw new Error(
-      'No AI provider configured. Please go to Settings to connect an AI provider.'
-    );
-  }
-
-  // Build the full system prompt with lesson context
   let fullSystemPrompt = SYSTEM_PROMPT;
   if (lessonContext) {
-    const contextInfo = buildLessonContext(lessonContext);
-    fullSystemPrompt = `${SYSTEM_PROMPT}\n\n${contextInfo}`;
+    fullSystemPrompt = `${SYSTEM_PROMPT}\n\n${buildLessonContext(lessonContext)}`;
   }
 
   const systemMessage: ChatMessage = {
@@ -58,47 +93,16 @@ export async function streamChatCompletion(
     content: fullSystemPrompt,
   };
 
-  // Apply token budget via sliding window
   const payloadMessages = buildContextWindow(systemMessage, messages);
+  const { url, headers } = getEndpointAndHeaders(settings);
 
-  // Determine endpoint and headers based on provider
-  let url: string;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-
-  switch (settings.provider) {
-    case 'openai':
-      url = 'https://api.openai.com/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${settings.apiKey}`;
-      break;
-    case 'groq':
-      url = 'https://api.groq.com/openai/v1/chat/completions';
-      headers['Authorization'] = `Bearer ${settings.apiKey}`;
-      break;
-    case 'ollama': {
-      // Normalize base URL: remove trailing slash to avoid double slashes
-      const normalizedBaseUrl = settings.baseUrl.replace(/\/+$/, '');
-      url = `${normalizedBaseUrl}/chat/completions`;
-      // Ollama doesn't need auth; honor explicit apiKey if provided
-      if (settings.apiKey) {
-        headers['Authorization'] = `Bearer ${settings.apiKey}`;
-      }
-      break;
-    }
-    default:
-      throw new Error(`Unsupported AI provider: ${settings.provider}`);
-  }
-
-  // Construct the payload
   const body = JSON.stringify({
     model: settings.model,
     messages: payloadMessages,
-    stream: true, // ALWAYS stream
+    stream: true,
     temperature: 0.7,
   });
 
-  // Execute the fetch
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -109,24 +113,112 @@ export async function streamChatCompletion(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
-        `AI Provider Error (${response.status}): ${errorText}`
-      );
+      throw new Error(`AI Provider Error (${response.status}): ${errorText}`);
     }
 
     return response;
-  } catch (error: unknown) {
-    // Network errors (CORS, offline, Ollama not running) give unhelpful "Failed to fetch" messages
-    if (
-      error instanceof TypeError &&
-      error.message.includes('Failed to fetch')
-    ) {
-      throw new Error(
-        `Network error connecting to ${settings.provider}. ` +
-          `If using Ollama, make sure it's running with CORS enabled: ` +
-          `$env:OLLAMA_ORIGINS="*"; ollama serve`
-      );
+  } catch (error) {
+    throw wrapNetworkError(error, settings.provider);
+  }
+}
+
+// ───────────────────────────────────────────────────────────────
+// Non-streaming chat completion (for lesson chat UI — full response)
+// ───────────────────────────────────────────────────────────────
+
+export async function generateChatCompletion(
+  messages: ChatMessage[],
+  settings: AISettings,
+  lessonContext?: LessonContext
+): Promise<string> {
+  let fullSystemPrompt = SYSTEM_PROMPT;
+  if (lessonContext) {
+    fullSystemPrompt = `${SYSTEM_PROMPT}\n\n${buildLessonContext(lessonContext)}`;
+  }
+
+  const systemMessage: ChatMessage = {
+    role: 'system',
+    content: fullSystemPrompt,
+  };
+
+  const payloadMessages = buildContextWindow(systemMessage, messages);
+  const { url, headers } = getEndpointAndHeaders(settings);
+
+  const body = JSON.stringify({
+    model: settings.model,
+    messages: payloadMessages,
+    stream: false,
+    temperature: 0.7,
+  });
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`AI Provider Error (${response.status}): ${errorText}`);
     }
-    throw error;
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    throw wrapNetworkError(error, settings.provider);
+  }
+}
+
+// ───────────────────────────────────────────────────────────────
+// Raw completion (for course generation)
+// Sends a custom system prompt + user prompt WITHOUT injecting
+// the anti-cheat SYSTEM_PROMPT. Used by the course generator
+// where we need full control over the system prompt.
+// ───────────────────────────────────────────────────────────────
+
+export async function generateRawCompletion(
+  systemPrompt: string,
+  userPrompt: string,
+  settings: AISettings,
+  options: { temperature?: number; signal?: AbortSignal; maxTokens?: number } = {}
+): Promise<string> {
+  const { temperature = 0.3, signal, maxTokens } = options;
+
+  const { url, headers } = getEndpointAndHeaders(settings);
+
+  const body: Record<string, unknown> = {
+    model: settings.model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    stream: false,
+    temperature,
+  };
+
+  if (maxTokens) body.max_tokens = maxTokens;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`AI Provider Error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') {
+      throw new Error('AI response did not contain text content.');
+    }
+    return content;
+  } catch (error) {
+    throw wrapNetworkError(error, settings.provider);
   }
 }
