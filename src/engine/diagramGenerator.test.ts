@@ -5,8 +5,8 @@ import {
   mergeDiagram,
   diagramDefinitionToSource,
   generateDiagram,
-  DiagramDefinitionSchema,
-  type DiagramDefinition,
+  Stage2DiagramSchema,
+  type Stage2Diagram,
 } from '@/engine/diagramGenerator';
 import * as aiService from '@/engine/aiService';
 import type { AISettings } from '@/engine/settings';
@@ -27,7 +27,7 @@ const mockSettings: AISettings = {
 // Zod Schema tests (Stage 2 output contract)
 // ───────────────────────────────────────────────────────────────
 
-describe('DiagramDefinitionSchema', () => {
+describe('Stage2DiagramSchema', () => {
   const validDefinition = {
     diagramType: 'flowchart' as const,
     title: 'HTTP Request',
@@ -44,7 +44,7 @@ describe('DiagramDefinitionSchema', () => {
   };
 
   it('accepts a valid diagram definition', () => {
-    const result = DiagramDefinitionSchema.safeParse(validDefinition);
+    const result = Stage2DiagramSchema.safeParse(validDefinition);
     expect(result.success).toBe(true);
   });
 
@@ -57,7 +57,7 @@ describe('DiagramDefinitionSchema', () => {
       ],
       edges: [{ from: 'server', to: 'response' }],
     };
-    const result = DiagramDefinitionSchema.safeParse(noStart);
+    const result = Stage2DiagramSchema.safeParse(noStart);
     expect(result.success).toBe(false);
   });
 
@@ -70,7 +70,7 @@ describe('DiagramDefinitionSchema', () => {
       ],
       edges: [{ from: 'user', to: 'server' }],
     };
-    const result = DiagramDefinitionSchema.safeParse(noEnd);
+    const result = Stage2DiagramSchema.safeParse(noEnd);
     expect(result.success).toBe(false);
   });
 
@@ -82,7 +82,7 @@ describe('DiagramDefinitionSchema', () => {
         { from: 'server', to: 'response' },
       ],
     };
-    const result = DiagramDefinitionSchema.safeParse(badEdges);
+    const result = Stage2DiagramSchema.safeParse(badEdges);
     expect(result.success).toBe(false);
   });
 
@@ -100,7 +100,7 @@ describe('DiagramDefinitionSchema', () => {
         // Missing the "No" edge
       ],
     };
-    const result = DiagramDefinitionSchema.safeParse(badDecision);
+    const result = Stage2DiagramSchema.safeParse(badDecision);
     expect(result.success).toBe(false);
   });
 
@@ -114,7 +114,7 @@ describe('DiagramDefinitionSchema', () => {
       ],
       edges: [{ from: 'start', to: 'end' }],
     };
-    const result = DiagramDefinitionSchema.safeParse(orphan);
+    const result = Stage2DiagramSchema.safeParse(orphan);
     expect(result.success).toBe(false);
   });
 
@@ -133,7 +133,7 @@ describe('DiagramDefinitionSchema', () => {
         { from: 'step2', to: 'end' },
       ],
     };
-    const result = DiagramDefinitionSchema.safeParse(dupes);
+    const result = Stage2DiagramSchema.safeParse(dupes);
     expect(result.success).toBe(false);
   });
 
@@ -146,7 +146,7 @@ describe('DiagramDefinitionSchema', () => {
       ],
       edges: [{ from: 'Start Node', to: 'end' }],
     };
-    const result = DiagramDefinitionSchema.safeParse(badId);
+    const result = Stage2DiagramSchema.safeParse(badId);
     expect(result.success).toBe(false);
   });
 
@@ -168,7 +168,7 @@ describe('DiagramDefinitionSchema', () => {
         { from: 'no-path', to: 'end' },
       ],
     };
-    const result = DiagramDefinitionSchema.safeParse(goodDecision);
+    const result = Stage2DiagramSchema.safeParse(goodDecision);
     expect(result.success).toBe(true);
   });
 });
@@ -179,7 +179,7 @@ describe('DiagramDefinitionSchema', () => {
 
 describe('diagramDefinitionToSource', () => {
   it('converts a simple flowchart to Mermaid-like syntax', () => {
-    const definition: DiagramDefinition = {
+    const definition: Stage2Diagram = {
       diagramType: 'flowchart',
       nodes: [
         { id: 'user', label: 'User Request', type: 'start' },
@@ -198,7 +198,7 @@ describe('diagramDefinitionToSource', () => {
   });
 
   it('converts decision nodes to diamond syntax', () => {
-    const definition: DiagramDefinition = {
+    const definition: Stage2Diagram = {
       diagramType: 'flowchart',
       nodes: [
         { id: 'start', label: 'Start', type: 'start' },
@@ -223,7 +223,7 @@ describe('diagramDefinitionToSource', () => {
   });
 
   it('uses "End" for end-type nodes', () => {
-    const definition: DiagramDefinition = {
+    const definition: Stage2Diagram = {
       diagramType: 'flowchart',
       nodes: [
         { id: 'start', label: 'Start', type: 'start' },
@@ -237,7 +237,7 @@ describe('diagramDefinitionToSource', () => {
   });
 
   it('handles edges with labels', () => {
-    const definition: DiagramDefinition = {
+    const definition: Stage2Diagram = {
       diagramType: 'flowchart',
       nodes: [
         { id: 'a', label: 'Step A', type: 'start' },
@@ -256,7 +256,7 @@ describe('diagramDefinitionToSource', () => {
 // ───────────────────────────────────────────────────────────────
 
 describe('mergeDiagram', () => {
-  const validDefinition: DiagramDefinition = {
+  const validDefinition: Stage2Diagram = {
     diagramType: 'flowchart',
     title: 'Test Diagram',
     caption: 'A test flowchart',
@@ -284,7 +284,7 @@ describe('mergeDiagram', () => {
   });
 
   it('falls back to title when caption is missing', () => {
-    const noCaption: DiagramDefinition = {
+    const noCaption: Stage2Diagram = {
       ...validDefinition,
       caption: undefined,
     };
@@ -293,7 +293,7 @@ describe('mergeDiagram', () => {
   });
 
   it('returns null for empty source output', () => {
-    const emptyDef: DiagramDefinition = {
+    const emptyDef: Stage2Diagram = {
       diagramType: 'flowchart',
       nodes: [
         { id: 'start', label: 'Start', type: 'start' },

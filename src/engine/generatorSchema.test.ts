@@ -8,6 +8,8 @@ import {
   buildLessonUserPrompt,
   FOCUSED_SYSTEM_PROMPT,
   buildFocusedUserPrompt,
+  DiagramSchema,
+  validateDiagram,
   type CoursePlan,
   type LessonPlan,
   type GeneratedLesson,
@@ -549,5 +551,461 @@ describe('buildFocusedUserPrompt', () => {
     const prompt = buildFocusedUserPrompt('content', mockPlan, beginnerLesson, []);
     expect(prompt).toContain('Output ONLY markdown');
     expect(prompt).toContain('no JSON');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Diagram Schema (W1.2)
+// ───────────────────────────────────────────────────────────────
+
+describe('DiagramSchema (W1.2)', () => {
+  const validDiagram = {
+    type: 'flow' as const,
+    title: 'Request Lifecycle',
+    nodes: [
+      { id: 'req', label: 'User Request', type: 'input' as const },
+      { id: 'proc', label: 'Process Data', type: 'process' as const },
+      { id: 'resp', label: 'Send Response', type: 'output' as const },
+    ],
+    edges: [
+      { from: 'req', to: 'proc' },
+      { from: 'proc', to: 'resp' },
+    ],
+  };
+
+  it('accepts a valid flow diagram', () => {
+    const result = DiagramSchema.safeParse(validDiagram);
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a valid relationship diagram', () => {
+    const rel = {
+      type: 'relationship' as const,
+      title: 'System Components',
+      nodes: [
+        { id: 'db', label: 'Database', type: 'storage' as const },
+        { id: 'api', label: 'API Server', type: 'service' as const },
+      ],
+      edges: [{ from: 'db', to: 'api' }],
+    };
+    const result = DiagramSchema.safeParse(rel);
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a valid architecture diagram', () => {
+    const arch = {
+      type: 'architecture' as const,
+      title: 'Microservices',
+      nodes: [
+        { id: 'gw', label: 'API Gateway', type: 'service' as const },
+        { id: 'auth', label: 'Auth Service', type: 'service' as const },
+        { id: 'users', label: 'User Service', type: 'service' as const },
+      ],
+      edges: [
+        { from: 'gw', to: 'auth' },
+        { from: 'gw', to: 'users' },
+        { from: 'users', to: 'gw' }, // Cycle allowed in architecture!
+      ],
+    };
+    const result = DiagramSchema.safeParse(arch);
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a valid sequence diagram', () => {
+    const seq = {
+      type: 'sequence' as const,
+      title: 'Login Flow',
+      nodes: [
+        { id: 'user', label: 'User', type: 'input' as const },
+        { id: 'ui', label: 'Login Form', type: 'process' as const },
+        { id: 'api', label: 'Auth API', type: 'service' as const },
+      ],
+      edges: [
+        { from: 'user', to: 'ui' },
+        { from: 'ui', to: 'api' },
+        { from: 'api', to: 'ui', label: 'Token' },
+      ],
+    };
+    const result = DiagramSchema.safeParse(seq);
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts nodes with optional description', () => {
+    const withDesc = {
+      ...validDiagram,
+      nodes: [
+        { id: 'req', label: 'User Request', type: 'input' as const, description: 'HTTP request from client' },
+        { id: 'proc', label: 'Process', type: 'process' as const },
+      ],
+      edges: [{ from: 'req', to: 'proc' }],
+    };
+    const result = DiagramSchema.safeParse(withDesc);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.nodes[0].description).toBe('HTTP request from client');
+    }
+  });
+
+  it('rejects diagram with fewer than 2 nodes', () => {
+    const tooFew = {
+      ...validDiagram,
+      nodes: [{ id: 'only', label: 'Only One', type: 'process' as const }],
+      edges: [],
+    };
+    const result = DiagramSchema.safeParse(tooFew);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects diagram with more than 8 nodes', () => {
+    const tooMany = {
+      ...validDiagram,
+      nodes: Array.from({ length: 9 }, (_, i) => ({
+        id: `node-${i}`,
+        label: `Node ${i}`,
+        type: 'process' as const,
+      })),
+      edges: Array.from({ length: 8 }, (_, i) => ({
+        from: `node-${i}`,
+        to: `node-${i + 1}`,
+      })),
+    };
+    const result = DiagramSchema.safeParse(tooMany);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects diagram with fewer than 1 edge', () => {
+    const noEdges = {
+      ...validDiagram,
+      edges: [],
+    };
+    const result = DiagramSchema.safeParse(noEdges);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects diagram with more than 10 edges', () => {
+    const tooManyEdges = {
+      ...validDiagram,
+      nodes: [
+        { id: 'a', label: 'A', type: 'process' as const },
+        { id: 'b', label: 'B', type: 'process' as const },
+      ],
+      edges: Array.from({ length: 11 }, () => ({
+        from: 'a',
+        to: 'b',
+      })),
+    };
+    const result = DiagramSchema.safeParse(tooManyEdges);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects node with label longer than 20 characters', () => {
+    const longLabel = {
+      ...validDiagram,
+      nodes: [
+        { id: 'req', label: 'This is a very long node label that exceeds the limit', type: 'input' as const },
+        { id: 'proc', label: 'Process', type: 'process' as const },
+      ],
+      edges: [{ from: 'req', to: 'proc' }],
+    };
+    const result = DiagramSchema.safeParse(longLabel);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects edge with label longer than 15 characters', () => {
+    const longEdgeLabel = {
+      ...validDiagram,
+      edges: [{ from: 'req', to: 'proc', label: 'This edge label is way too long' }],
+    };
+    const result = DiagramSchema.safeParse(longEdgeLabel);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects title longer than 50 characters', () => {
+    const longTitle = {
+      ...validDiagram,
+      title: 'This is a very long diagram title that exceeds fifty characters limit',
+    };
+    const result = DiagramSchema.safeParse(longTitle);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid diagram type', () => {
+    const badType = {
+      ...validDiagram,
+      type: 'mindmap',
+    };
+    const result = DiagramSchema.safeParse(badType);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid node type', () => {
+    const badNodeType = {
+      ...validDiagram,
+      nodes: [
+        { id: 'req', label: 'Request', type: 'terminal' },
+        { id: 'proc', label: 'Process', type: 'process' as const },
+      ],
+      edges: [{ from: 'req', to: 'proc' }],
+    };
+    const result = DiagramSchema.safeParse(badNodeType);
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects edges referencing non-existent nodes', () => {
+    const badEdges = {
+      ...validDiagram,
+      edges: [
+        { from: 'req', to: 'nonexistent' },
+        { from: 'proc', to: 'resp' },
+      ],
+    };
+    const result = DiagramSchema.safeParse(badEdges);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map(i => i.message);
+      expect(messages.some(m => m.includes('existing node IDs'))).toBe(true);
+    }
+  });
+
+  it('rejects orphan nodes (disconnected graph)', () => {
+    const orphan = {
+      ...validDiagram,
+      nodes: [
+        { id: 'req', label: 'Request', type: 'input' as const },
+        { id: 'lonely', label: 'Lonely Node', type: 'process' as const },
+        { id: 'proc', label: 'Process', type: 'process' as const },
+      ],
+      edges: [{ from: 'req', to: 'proc' }],
+    };
+    const result = DiagramSchema.safeParse(orphan);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map(i => i.message);
+      expect(messages.some(m => m.includes('orphan'))).toBe(true);
+    }
+  });
+
+  it('rejects duplicate node IDs', () => {
+    const dupIds = {
+      ...validDiagram,
+      nodes: [
+        { id: 'req', label: 'Request', type: 'input' as const },
+        { id: 'req', label: 'Duplicate ID', type: 'process' as const },
+        { id: 'resp', label: 'Response', type: 'output' as const },
+      ],
+      edges: [
+        { from: 'req', to: 'req' },
+        { from: 'req', to: 'resp' },
+      ],
+    };
+    const result = DiagramSchema.safeParse(dupIds);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map(i => i.message);
+      expect(messages.some(m => m.includes('unique'))).toBe(true);
+    }
+  });
+
+  it('rejects cyclic flow diagrams with specific error message', () => {
+    const cyclic = {
+      type: 'flow' as const,
+      title: 'Cyclic Flow',
+      nodes: [
+        { id: 'a', label: 'Step A', type: 'input' as const },
+        { id: 'b', label: 'Step B', type: 'process' as const },
+        { id: 'c', label: 'Step C', type: 'output' as const },
+      ],
+      edges: [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'c' },
+        { from: 'c', to: 'a' }, // Cycle!
+      ],
+    };
+    const result = DiagramSchema.safeParse(cyclic);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map(i => i.message);
+      expect(messages.some(m => m.includes('acyclic'))).toBe(true);
+    }
+  });
+
+  it('allows cycles in non-flow diagram types', () => {
+    const cyclicRelationship = {
+      type: 'relationship' as const,
+      title: 'Mutual Dependence',
+      nodes: [
+        { id: 'a', label: 'Component A', type: 'service' as const },
+        { id: 'b', label: 'Component B', type: 'service' as const },
+      ],
+      edges: [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'a' }, // Cycle allowed!
+      ],
+    };
+    const result = DiagramSchema.safeParse(cyclicRelationship);
+    expect(result.success).toBe(true);
+  });
+
+  it('allows self-loops in non-flow diagrams', () => {
+    const selfLoop = {
+      type: 'architecture' as const,
+      title: 'Self Referencing',
+      nodes: [
+        { id: 'a', label: 'Service A', type: 'service' as const },
+        { id: 'b', label: 'Service B', type: 'service' as const },
+      ],
+      edges: [
+        { from: 'a', to: 'a' }, // Self-loop
+        { from: 'a', to: 'b' },
+      ],
+    };
+    const result = DiagramSchema.safeParse(selfLoop);
+    expect(result.success).toBe(true);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// validateDiagram helper
+// ───────────────────────────────────────────────────────────────
+
+describe('validateDiagram', () => {
+  it('returns success with validated data for valid diagram', () => {
+    const validDiagram = {
+      type: 'flow' as const,
+      title: 'Test Flow',
+      nodes: [
+        { id: 'a', label: 'Start', type: 'input' as const },
+        { id: 'b', label: 'End', type: 'output' as const },
+      ],
+      edges: [{ from: 'a', to: 'b' }],
+    };
+
+    const result = validateDiagram(validDiagram);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.title).toBe('Test Flow');
+      expect(result.data.nodes).toHaveLength(2);
+      expect(result.data.edges).toHaveLength(1);
+    }
+  });
+
+  it('returns error with detailed message for invalid diagram', () => {
+    const invalidDiagram = {
+      type: 'flow' as const,
+      title: 'Bad Diagram',
+      nodes: [
+        { id: 'a', label: 'Start', type: 'input' as const },
+      ],
+      edges: [{ from: 'a', to: 'nonexistent' }],
+    };
+
+    const result = validateDiagram(invalidDiagram);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('Diagram validation failed');
+      // Should list all errors (too few nodes + edge to nonexistent)
+      expect(result.error).toContain('nodes');
+      expect(result.error).toContain('existing node IDs');
+    }
+  });
+
+  it('returns error for non-object input', () => {
+    const result = validateDiagram('not an object');
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('Diagram validation failed');
+    }
+  });
+
+  it('returns error for null input', () => {
+    const result = validateDiagram(null);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('Diagram validation failed');
+    }
+  });
+
+  it('returns error for undefined input', () => {
+    const result = validateDiagram(undefined);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('Diagram validation failed');
+    }
+  });
+
+  it('lists multiple validation failures at once', () => {
+    const multipleErrors = {
+      type: 'flow' as const,
+      title: '', // Too short
+      nodes: [], // Too few
+      edges: [], // Too few
+    };
+
+    const result = validateDiagram(multipleErrors);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      // Should list errors for title, nodes, and edges
+      expect(result.error).toContain('title');
+      expect(result.error).toContain('nodes');
+      expect(result.error).toContain('edges');
+    }
+  });
+
+  it('returns specific cyclic error for flow diagrams', () => {
+    const cyclicFlow = {
+      type: 'flow' as const,
+      title: 'Cyclic',
+      nodes: [
+        { id: 'a', label: 'A', type: 'process' as const },
+        { id: 'b', label: 'B', type: 'process' as const },
+      ],
+      edges: [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'a' },
+      ],
+    };
+
+    const result = validateDiagram(cyclicFlow);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('acyclic');
+    }
+  });
+
+  it('returns orphan node error when graph is disconnected', () => {
+    const disconnected = {
+      type: 'flow' as const,
+      title: 'Disconnected',
+      nodes: [
+        { id: 'a', label: 'A', type: 'input' as const },
+        { id: 'b', label: 'B', type: 'process' as const },
+        { id: 'c', label: 'Lonely', type: 'output' as const },
+      ],
+      edges: [{ from: 'a', to: 'b' }],
+    };
+
+    const result = validateDiagram(disconnected);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('orphan');
+    }
+  });
+
+  it('returns duplicate ID error when IDs are not unique', () => {
+    const dupIds = {
+      type: 'flow' as const,
+      title: 'Duplicate IDs',
+      nodes: [
+        { id: 'same', label: 'First', type: 'input' as const },
+        { id: 'same', label: 'Second', type: 'output' as const },
+      ],
+      edges: [{ from: 'same', to: 'same' }],
+    };
+
+    const result = validateDiagram(dupIds);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('unique');
+    }
   });
 });

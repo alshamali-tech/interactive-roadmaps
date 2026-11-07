@@ -26,17 +26,17 @@ import type { AISettings } from './settings';
 // Zod Schemas (Stage 2 output contract)
 // ───────────────────────────────────────────────────────────────
 
-/** Allowed node types for the diagram */
-export const DiagramNodeTypeSchema = z.enum([
+/** Allowed node types for Stage 2 diagram extraction */
+export const Stage2NodeTypeSchema = z.enum([
   'start',
   'end',
   'process',
   'decision',
 ]);
-export type DiagramNodeType = z.infer<typeof DiagramNodeTypeSchema>;
+export type Stage2NodeType = z.infer<typeof Stage2NodeTypeSchema>;
 
-/** A single node in the diagram */
-export const DiagramNodeSchema = z.object({
+/** A single node in the Stage 2 diagram definition */
+export const Stage2NodeSchema = z.object({
   id: z
     .string()
     .min(1)
@@ -47,14 +47,14 @@ export const DiagramNodeSchema = z.object({
     .min(1)
     .max(40)
     .describe('Short display label (2-5 words)'),
-  type: DiagramNodeTypeSchema.describe(
+  type: Stage2NodeTypeSchema.describe(
     'Visual node type: start, end, process, or decision'
   ),
 });
-export type DiagramNode = z.infer<typeof DiagramNodeSchema>;
+export type Stage2Node = z.infer<typeof Stage2NodeSchema>;
 
-/** A single edge connecting two nodes */
-export const DiagramEdgeSchema = z.object({
+/** A single edge connecting two nodes in Stage 2 */
+export const Stage2EdgeSchema = z.object({
   from: z.string().min(1).describe('Source node ID (must exist in nodes array)'),
   to: z.string().min(1).describe('Target node ID (must exist in nodes array)'),
   label: z
@@ -63,10 +63,10 @@ export const DiagramEdgeSchema = z.object({
     .optional()
     .describe('Short label on the edge (1-3 words, e.g., "Yes", "No", "Valid")'),
 });
-export type DiagramEdge = z.infer<typeof DiagramEdgeSchema>;
+export type Stage2Edge = z.infer<typeof Stage2EdgeSchema>;
 
 /** The complete structured diagram definition (Stage 2 output) */
-export const DiagramDefinitionSchema = z
+export const Stage2DiagramSchema = z
   .object({
     diagramType: z
       .enum(['flowchart', 'sequence', 'class', 'er', 'custom'])
@@ -83,12 +83,12 @@ export const DiagramDefinitionSchema = z
       .optional()
       .describe('One sentence describing what this diagram shows'),
     nodes: z
-      .array(DiagramNodeSchema)
+      .array(Stage2NodeSchema)
       .min(2)
       .max(20)
       .describe('Array of nodes (2-20 nodes)'),
     edges: z
-      .array(DiagramEdgeSchema)
+      .array(Stage2EdgeSchema)
       .min(1)
       .max(30)
       .describe('Array of edges connecting nodes'),
@@ -143,7 +143,7 @@ export const DiagramDefinitionSchema = z
     { message: 'Node labels must be unique to prevent merge conflicts in rendering.' }
   );
 
-export type DiagramDefinition = z.infer<typeof DiagramDefinitionSchema>;
+export type Stage2Diagram = z.infer<typeof Stage2DiagramSchema>;
 
 // ───────────────────────────────────────────────────────────────
 // Result Types
@@ -165,7 +165,7 @@ export interface DiagramGenerationResult {
   /** The markdown text explanation (always present) */
   text: string;
   /** The structured diagram definition (null if extraction failed) */
-  diagram: DiagramDefinition | null;
+  diagram: Stage2Diagram | null;
   /** Complete widget config ready for rendering (null if merge failed) */
   widgetConfig: DiagramWidgetConfig | null;
   /** True if fell back to text-only because diagram generation failed */
@@ -407,7 +407,7 @@ export async function extractDiagram(
   settings: AISettings,
   signal?: AbortSignal,
   useStrictPrompt: boolean = false
-): Promise<DiagramDefinition> {
+): Promise<Stage2Diagram> {
   const systemPrompt = useStrictPrompt
     ? DIAGRAM_EXTRACTION_STRICT_PROMPT
     : DIAGRAM_EXTRACTION_SYSTEM_PROMPT;
@@ -444,7 +444,7 @@ Return ONLY the JSON object — nothing else.`;
   const parsed = extractJson(response);
 
   // Validate against Zod schema (includes semantic refinements)
-  const result = DiagramDefinitionSchema.safeParse(parsed);
+  const result = Stage2DiagramSchema.safeParse(parsed);
 
   if (!result.success) {
     const fieldErrors = result.error.issues
@@ -475,7 +475,7 @@ Return ONLY the JSON object — nothing else.`;
  * @returns Mermaid-like source string for DiagramWidget
  */
 export function diagramDefinitionToSource(
-  definition: DiagramDefinition
+  definition: Stage2Diagram
 ): string {
   const lines: string[] = [];
 
@@ -504,7 +504,7 @@ export function diagramDefinitionToSource(
  *
  * @see DiagramWidget.parseDiagram for the parsing rules
  */
-function nodeToSyntax(node: DiagramNode): string {
+function nodeToSyntax(node: Stage2Node): string {
   if (node.type === 'start') return 'Start';
   if (node.type === 'end') return 'End';
   if (node.type === 'decision') return `{${node.label}}`;
@@ -533,7 +533,7 @@ function nodeToSyntax(node: DiagramNode): string {
  */
 export function mergeDiagram(
   _text: string,
-  definition: DiagramDefinition,
+  definition: Stage2Diagram,
   widgetId: string = 'diagram-1'
 ): DiagramWidgetConfig | null {
   try {
@@ -647,7 +647,7 @@ export async function generateDiagram(
   }
 
   // ── Stage 2: Diagram Extraction (with retries) ──
-  let diagram: DiagramDefinition | null = null;
+  let diagram: Stage2Diagram | null = null;
   let lastError: string | undefined;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {

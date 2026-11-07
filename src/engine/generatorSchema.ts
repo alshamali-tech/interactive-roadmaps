@@ -113,6 +113,178 @@ export const GeneratedCourseSchema = z.object({
 export type GeneratedCourse = z.infer<typeof GeneratedCourseSchema>;
 
 // ───────────────────────────────────────────────────────────────
+// Diagram Schema (W1.2 - Context-Aware Diagram final validation)
+// ───────────────────────────────────────────────────────────────
+
+/** Allowed node types for diagrams */
+export const DiagramNodeTypeSchema = z.enum([
+  'input',
+  'process',
+  'decision',
+  'output',
+  'storage',
+  'service',
+]);
+export type DiagramNodeType = z.infer<typeof DiagramNodeTypeSchema>;
+
+/** A single node in a diagram */
+export const DiagramNodeSchema = z.object({
+  id: z.string().min(1).describe('Unique node identifier'),
+  label: z
+    .string()
+    .min(1)
+    .max(20)
+    .describe('Short display label (max 20 characters)'),
+  type: DiagramNodeTypeSchema.describe('Visual node type'),
+  description: z
+    .string()
+    .max(200)
+    .optional()
+    .describe('Optional description for tooltip/click detail'),
+});
+export type DiagramNode = z.infer<typeof DiagramNodeSchema>;
+
+/** A single edge connecting two nodes */
+export const DiagramEdgeSchema = z.object({
+  from: z.string().min(1).describe('Source node ID (must exist in nodes array)'),
+  to: z.string().min(1).describe('Target node ID (must exist in nodes array)'),
+  label: z
+    .string()
+    .max(15)
+    .optional()
+    .describe('Short label on the edge (max 15 characters)'),
+});
+export type DiagramEdge = z.infer<typeof DiagramEdgeSchema>;
+
+/** Allowed diagram types */
+export const DiagramTypeSchema = z.enum([
+  'flow',
+  'relationship',
+  'architecture',
+  'sequence',
+]);
+export type DiagramType = z.infer<typeof DiagramTypeSchema>;
+
+/**
+ * Helper function to detect cycles in a directed graph using DFS.
+ * Used to validate that 'flow' type diagrams are acyclic.
+ */
+function hasCycle(nodes: DiagramNode[], edges: DiagramEdge[]): boolean {
+  const adjacency = new Map<string, string[]>();
+  for (const node of nodes) {
+    adjacency.set(node.id, []);
+  }
+  for (const edge of edges) {
+    adjacency.get(edge.from)?.push(edge.to);
+  }
+
+  const visited = new Set<string>();
+  const recursionStack = new Set<string>();
+
+  function dfs(nodeId: string): boolean {
+    if (recursionStack.has(nodeId)) return true; // Cycle detected
+    if (visited.has(nodeId)) return false; // Already fully processed
+
+    visited.add(nodeId);
+    recursionStack.add(nodeId);
+
+    const neighbors = adjacency.get(nodeId) || [];
+    for (const neighbor of neighbors) {
+      if (dfs(neighbor)) return true;
+    }
+
+    recursionStack.delete(nodeId);
+    return false;
+  }
+
+  // Check for cycles starting from each node
+  for (const node of nodes) {
+    if (dfs(node.id)) return true;
+  }
+
+  return false;
+}
+
+/** The complete diagram structure with semantic validation */
+export const DiagramSchema = z
+  .object({
+    type: DiagramTypeSchema.describe('Type of diagram'),
+    title: z
+      .string()
+      .min(1)
+      .max(50)
+      .describe('Diagram title (max 50 characters)'),
+    nodes: z
+      .array(DiagramNodeSchema)
+      .min(2)
+      .max(8)
+      .describe('Array of nodes (2-8 nodes)'),
+    edges: z
+      .array(DiagramEdgeSchema)
+      .min(1)
+      .max(10)
+      .describe('Array of edges (1-10 edges)'),
+  })
+  .refine(
+    (data) => {
+      // Node IDs must be unique
+      const ids = data.nodes.map((n) => n.id);
+      return new Set(ids).size === ids.length;
+    },
+    { message: 'Node IDs must be unique.' }
+  )
+  .refine(
+    (data) => {
+      // All edge 'from' and 'to' must reference existing node IDs
+      const nodeIds = new Set(data.nodes.map((n) => n.id));
+      return data.edges.every((e) => nodeIds.has(e.from) && nodeIds.has(e.to));
+    },
+    { message: 'All edges must reference existing node IDs in the nodes array.' }
+  )
+  .refine(
+    (data) => {
+      // No orphan nodes — every node must have at least one connection
+      return data.nodes.every((node) => {
+        return data.edges.some((e) => e.from === node.id || e.to === node.id);
+      });
+    },
+    { message: 'No orphan nodes allowed — every node must have at least one edge.' }
+  )
+  .refine(
+    (data) => {
+      // For 'flow' type diagrams, the graph must be acyclic
+      if (data.type !== 'flow') return true;
+      return !hasCycle(data.nodes, data.edges);
+    },
+    { message: 'Flow diagrams must be acyclic — no loops or cycles allowed.' }
+  );
+
+export type Diagram = z.infer<typeof DiagramSchema>;
+
+/**
+ * Validates a diagram against the DiagramSchema.
+ * Returns the validated diagram on success, or a detailed error message on failure.
+ *
+ * @param data - The diagram data to validate
+ * @returns Either the validated Diagram object, or an error message string
+ */
+export function validateDiagram(
+  data: unknown
+): { success: true; data: Diagram } | { success: false; error: string } {
+  const result = DiagramSchema.safeParse(data);
+  if (result.success) {
+    return { success: true, data: result.data };
+  }
+  const fieldErrors = result.error.issues
+    .map((i) => `  • ${i.path.join('.')}: ${i.message}`)
+    .join('\n');
+  return {
+    success: false,
+    error: `Diagram validation failed:\n${fieldErrors}`,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────
 // Robust JSON extractor
 // Handles: code fences, prose before/after, trailing commas,
 // truncated output, unbalanced brackets
