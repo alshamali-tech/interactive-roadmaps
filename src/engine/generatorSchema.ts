@@ -2,118 +2,8 @@ import { z } from 'zod';
 import { truncateSmart } from './prompts';
 
 // ───────────────────────────────────────────────────────────────
-// Widget schema (shared across all stages)
-// ───────────────────────────────────────────────────────────────
-
-export const WidgetConfigSchema = z.discriminatedUnion('type', [
-  z.object({
-    id: z.string(),
-    type: z.literal('sandbox'),
-    props: z.object({
-      inputType: z.enum(['text', 'code']),
-      outputType: z.enum(['text', 'html']),
-      initialState: z.string(),
-      processFunction: z.string().optional(),
-      label: z.string().optional(),
-      placeholder: z.string().optional(),
-    }),
-  }),
-  z.object({
-    id: z.string(),
-    type: z.literal('mutator'),
-    props: z.object({
-      language: z.enum(['python', 'javascript', 'typescript', 'sql']),
-      brokenCode: z.string(),
-      hint: z.string(),
-      testCases: z.array(z.string()).default([]),
-      title: z.string().optional(),
-    }),
-  }),
-  z.object({
-    id: z.string(),
-    type: z.literal('trade-off'),
-    props: z.object({
-      scenario: z.string(),
-      options: z.array(z.object({
-        id: z.string(),
-        name: z.string(),
-        description: z.string(),
-        pros: z.array(z.string()),
-        cons: z.array(z.string()),
-        metrics: z.object({
-          cost: z.number().min(1).max(10),
-          performance: z.number().min(1).max(10),
-          complexity: z.number().min(1).max(10),
-          scalability: z.number().min(1).max(10).default(5),
-        }),
-      })).min(2).max(4),
-      explanation: z.string().optional(),
-    }),
-  }),
-]);
-
-export type WidgetConfig = z.infer<typeof WidgetConfigSchema>;
-
-// ───────────────────────────────────────────────────────────────
-// Stage 1: Plan schema (lightweight blueprint)
-// ───────────────────────────────────────────────────────────────
-
-export const LessonPlanSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  suggestedDifficulty: z.enum(['beginner', 'intermediate', 'advanced']).default('beginner'),
-  keyPoints: z.array(z.string()).min(1).max(5),
-  widgetSuggestions: z.array(z.object({
-    type: z.enum(['sandbox', 'mutator', 'trade-off']),
-    purpose: z.string(),
-  })).default([]),
-});
-
-export const CoursePlanSchema = z.object({
-  title: z.string(),
-  description: z.string(),
-  lessons: z.array(LessonPlanSchema).min(1).max(10),
-});
-
-export type CoursePlan = z.infer<typeof CoursePlanSchema>;
-export type LessonPlan = z.infer<typeof LessonPlanSchema>;
-
-// ───────────────────────────────────────────────────────────────
-// Stage 2: Lesson schema (one lesson at a time)
-// ───────────────────────────────────────────────────────────────
-
-export const GeneratedLessonSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  metadata: z.object({
-    difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
-    estimatedMinutes: z.number().min(1).max(60),
-    tags: z.array(z.string()),
-    version: z.string().default('1.0.0'),
-  }),
-  prerequisites: z.array(z.string()).default([]),
-  content: z.object({
-    markdown: z.string(),
-    widgets: z.array(WidgetConfigSchema).default([]),
-  }),
-});
-
-export type GeneratedLesson = z.infer<typeof GeneratedLessonSchema>;
-
-// ───────────────────────────────────────────────────────────────
-// Stage 3: Course schema (final merged structure)
-// ───────────────────────────────────────────────────────────────
-
-export const GeneratedCourseSchema = z.object({
-  title: z.string(),
-  description: z.string(),
-  lessons: z.array(GeneratedLessonSchema).min(1).max(10),
-});
-
-export type GeneratedCourse = z.infer<typeof GeneratedCourseSchema>;
-
-// ───────────────────────────────────────────────────────────────
 // Diagram Schema (W1.2 - Context-Aware Diagram final validation)
+// Defined BEFORE WidgetConfigSchema so it can be referenced inline
 // ───────────────────────────────────────────────────────────────
 
 /** Allowed node types for diagrams */
@@ -285,6 +175,124 @@ export function validateDiagram(
 }
 
 // ───────────────────────────────────────────────────────────────
+// Widget schema (shared across all stages)
+// ───────────────────────────────────────────────────────────────
+
+export const WidgetConfigSchema = z.discriminatedUnion('type', [
+  z.object({
+    id: z.string(),
+    type: z.literal('sandbox'),
+    props: z.object({
+      inputType: z.enum(['text', 'code']),
+      outputType: z.enum(['text', 'html']),
+      initialState: z.string(),
+      processFunction: z.string().optional(),
+      label: z.string().optional(),
+      placeholder: z.string().optional(),
+    }),
+  }),
+  z.object({
+    id: z.string(),
+    type: z.literal('mutator'),
+    props: z.object({
+      language: z.enum(['python', 'javascript', 'typescript', 'sql']),
+      brokenCode: z.string(),
+      hint: z.string(),
+      testCases: z.array(z.string()).default([]),
+      title: z.string().optional(),
+    }),
+  }),
+  z.object({
+    id: z.string(),
+    type: z.literal('trade-off'),
+    props: z.object({
+      scenario: z.string(),
+      options: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string(),
+        pros: z.array(z.string()),
+        cons: z.array(z.string()),
+        metrics: z.object({
+          cost: z.number().min(1).max(10),
+          performance: z.number().min(1).max(10),
+          complexity: z.number().min(1).max(10),
+          scalability: z.number().min(1).max(10).default(5),
+        }),
+      })).min(2).max(4),
+      explanation: z.string().optional(),
+    }),
+  }),
+  z.object({
+    id: z.string(),
+    type: z.literal('context-diagram'),
+    props: z.object({
+      diagram: DiagramSchema,
+    }),
+  }),
+]);
+
+export type WidgetConfig = z.infer<typeof WidgetConfigSchema>;
+
+// ───────────────────────────────────────────────────────────────
+// Stage 1: Plan schema (lightweight blueprint)
+// ───────────────────────────────────────────────────────────────
+
+export const LessonPlanSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  suggestedDifficulty: z.enum(['beginner', 'intermediate', 'advanced']).default('beginner'),
+  keyPoints: z.array(z.string()).min(1).max(5),
+  widgetSuggestions: z.array(z.object({
+    type: z.enum(['sandbox', 'mutator', 'trade-off', 'context-diagram']),
+    purpose: z.string(),
+  })).default([]),
+});
+
+export const CoursePlanSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  lessons: z.array(LessonPlanSchema).min(1).max(10),
+});
+
+export type CoursePlan = z.infer<typeof CoursePlanSchema>;
+export type LessonPlan = z.infer<typeof LessonPlanSchema>;
+
+// ───────────────────────────────────────────────────────────────
+// Stage 2: Lesson schema (one lesson at a time)
+// ───────────────────────────────────────────────────────────────
+
+export const GeneratedLessonSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  metadata: z.object({
+    difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
+    estimatedMinutes: z.number().min(1).max(60),
+    tags: z.array(z.string()),
+    version: z.string().default('1.0.0'),
+  }),
+  prerequisites: z.array(z.string()).default([]),
+  content: z.object({
+    markdown: z.string(),
+    widgets: z.array(WidgetConfigSchema).default([]),
+  }),
+});
+
+export type GeneratedLesson = z.infer<typeof GeneratedLessonSchema>;
+
+// ───────────────────────────────────────────────────────────────
+// Stage 3: Course schema (final merged structure)
+// ───────────────────────────────────────────────────────────────
+
+export const GeneratedCourseSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  lessons: z.array(GeneratedLessonSchema).min(1).max(10),
+});
+
+export type GeneratedCourse = z.infer<typeof GeneratedCourseSchema>;
+
+// ───────────────────────────────────────────────────────────────
 // Robust JSON extractor
 // Handles: code fences, prose before/after, trailing commas,
 // truncated output, unbalanced brackets
@@ -453,6 +461,7 @@ Widget suggestion guidelines:
 - "sandbox": Best for concepts that benefit from experimentation — let users type code or text and see results. Use for: algorithms, data transformations, API patterns, syntax exercises.
 - "mutator": Best for debugging practice and code comprehension — provide broken code that users must fix. Use for: common mistakes, anti-patterns, "spot the bug" exercises.
 - "trade-off": Best for architectural or design decisions — present competing approaches with measurable trade-offs. Use for: choosing between technologies, patterns, or strategies.
+- "context-diagram": Best for visualizing processes, flows, architectures, or relationships. Use for: system diagrams, flowcharts, sequences, component relationships.
 - Suggest 1 widget per lesson that best reinforces the lesson's core concept.
 - The "purpose" field should describe a specific, actionable activity the learner can do.
 
@@ -620,10 +629,11 @@ CONTENT DEPTH REQUIREMENTS:
 STRUCTURE RULES:
 - Use {{widget:widget-id}} syntax in the markdown to embed widgets inline
 - Widget IDs MUST be prefixed with the lesson id (e.g., "${targetLesson.id}-widget-1")
-- Allowed widget types: "sandbox", "mutator", "trade-off"
+- Allowed widget types: "sandbox", "mutator", "trade-off", "context-diagram"
 - Sandbox props: inputType ("text"|"code"), outputType ("text"|"html"), initialState (string), processFunction (optional JS string with a process(input) function)
 - Mutator props: language, brokenCode, hint, testCases (array of strings)
 - Trade-off props: scenario, options array (each: id, name, description, pros[], cons[], metrics{cost,performance,complexity,scalability})
+- Context-diagram props: diagram object (type, title, nodes[], edges[] — see DiagramSchema)
 `;
 };
 
@@ -743,10 +753,15 @@ optionB_con: [another disadvantage]
 explanation: [why one might be better than the other]
 :::
 
+:::widget context-diagram
+diagram: [a valid JSON object with type, title, nodes[], edges[] — see example below]
+:::
+
 Widget types and when to use them:
 - sandbox: For concepts that benefit from experimentation (algorithms, data transforms, syntax)
 - mutator: For debugging practice (broken code the user must fix)
 - trade-off: For comparing approaches (choosing technologies, patterns, strategies)
+- context-diagram: For visualizing processes, flows, architectures, or relationships. Use when a concept is best understood visually — e.g., request flows, component architectures, data pipelines, decision trees.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXAMPLES
@@ -799,6 +814,14 @@ optionB_pro: Scales horizontally easily
 optionB_con: No built-in data validation
 optionB_con: No joins between collections
 explanation: PostgreSQL is better for structured data with relationships, MongoDB for flexible schemas
+:::
+
+Example of good context-diagram placement:
+
+Here's how a typical web request flows through the system:
+
+:::widget context-diagram
+diagram: {"type":"flow","title":"Web Request Flow","nodes":[{"id":"client","label":"Client","type":"input"},{"id":"dns","label":"DNS Lookup","type":"process"},{"id":"server","label":"Web Server","type":"service"},{"id":"db","label":"Database","type":"storage"},{"id":"response","label":"Response","type":"output"}],"edges":[{"from":"client","to":"dns"},{"from":"dns","to":"server"},{"from":"server","to":"db"},{"from":"server","to":"response"}]}
 :::
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

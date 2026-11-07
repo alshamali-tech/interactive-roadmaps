@@ -413,25 +413,27 @@ solution do you choose?
       },
       {
         id: 'pipeline-demo',
-        type: 'node-graph',
+        type: 'context-diagram',
         props: {
-          title: '🧩 Data Processing Pipeline — Try It!',
-          playground: true,
-          initialNodes: [
-            { id: 'source', type: 'input', position: { x: 0, y: 100 }, label: 'Data Source', description: 'Raw input stream' },
-            { id: 'filter', type: 'process', position: { x: 250, y: 100 }, label: 'Filter', description: 'Remove invalid entries' },
-            { id: 'validator', type: 'condition', position: { x: 500, y: 0 }, label: 'Valid?', description: 'Schema check' },
-            { id: 'transform', type: 'process', position: { x: 750, y: 0 }, label: 'Transform', description: 'Normalize & enrich' },
-            { id: 'error', type: 'process', position: { x: 500, y: 200 }, label: 'Error Log', description: 'Failed records' },
-            { id: 'output', type: 'output', position: { x: 1000, y: 0 }, label: 'Database', description: 'Persist results' },
-          ],
-          initialEdges: [
-            { id: 'e1', source: 'source', target: 'filter', animated: false },
-            { id: 'e2', source: 'filter', target: 'validator', animated: false },
-            { id: 'e3', source: 'validator', target: 'transform', label: 'Yes', animated: false },
-            { id: 'e4', source: 'validator', target: 'error', label: 'No', animated: false },
-            { id: 'e5', source: 'transform', target: 'output', animated: false },
-          ],
+          diagram: {
+            type: 'flow',
+            title: '🧩 Data Processing Pipeline',
+            nodes: [
+              { id: 'source', label: 'Data Source', type: 'input', description: 'Raw input stream' },
+              { id: 'filter', label: 'Filter', type: 'process', description: 'Remove invalid entries' },
+              { id: 'validator', label: 'Valid?', type: 'decision', description: 'Schema check' },
+              { id: 'transform', label: 'Transform', type: 'process', description: 'Normalize & enrich' },
+              { id: 'error', label: 'Error Log', type: 'process', description: 'Failed records' },
+              { id: 'output', label: 'Database', type: 'output', description: 'Persist results' },
+            ],
+            edges: [
+              { from: 'source', to: 'filter' },
+              { from: 'filter', to: 'validator' },
+              { from: 'validator', to: 'transform', label: 'Yes' },
+              { from: 'validator', to: 'error', label: 'No' },
+              { from: 'transform', to: 'output' },
+            ],
+          },
         },
       },
       {

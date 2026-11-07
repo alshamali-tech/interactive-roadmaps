@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 import type { Diagram, DiagramNode, DiagramNodeType } from '@/engine/generatorSchema';
 import { calculateDiagramLayout } from '@/lib/diagramLayout';
 
-interface ContextDiagramProps {
+export interface ContextDiagramProps {
   diagram: Diagram;
   onExplainThisDiagram?: (diagram: Diagram) => void;
 }

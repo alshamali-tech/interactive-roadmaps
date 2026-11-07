@@ -14,15 +14,16 @@
  *   key: value
  *   :::
  *
- * Supported types: sandbox, mutator, trade-off (also accepts trade_off)
+ * Supported types: sandbox, mutator, trade-off (also accepts trade_off),
+ *                  context-diagram (also accepts context_diagram)
  * Invalid widgets are silently skipped rather than failing the whole lesson.
  */
 
-import { WidgetConfigSchema, type WidgetConfig } from './generatorSchema';
+import { WidgetConfigSchema, DiagramSchema, type WidgetConfig, type Diagram } from './generatorSchema';
 
 // Matches :::widget <type> ... ::: blocks (non-greedy)
 // \n? before closing ::: allows matching empty-body widgets like :::widget sandbox\n:::
-const WIDGET_BLOCK_RE = /:::widget\s+(sandbox|mutator|trade-off|trade_off)[ \t]*\n([\s\S]*?)\n?:::/gi;
+const WIDGET_BLOCK_RE = /:::widget\s+(sandbox|mutator|trade-off|trade_off|context-diagram|context_diagram)[ \t]*\n([\s\S]*?)\n?:::/gi;
 
 /**
  * Parse key: value pairs from a widget block body.
@@ -93,6 +94,17 @@ function clampNumber(val: unknown, min: number, max: number, fallback: number): 
   const n = typeof val === 'string' ? parseFloat(val) : Number(val);
   if (isNaN(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Try to parse a string as JSON. Returns null if parsing fails.
+ */
+function tryParseJson(text: string): unknown | null {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeSandbox(props: Record<string, string | string[]>): WidgetConfig | null {
@@ -202,11 +214,67 @@ function normalizeTradeOff(props: Record<string, string | string[]>): WidgetConf
   return validation.success ? validation.data : null;
 }
 
-function normalizeWidget(type: string, props: Record<string, string | string[]>): WidgetConfig | null {
-  // Empty body = no props at all = clearly a mistake, skip it
-  if (Object.keys(props).length === 0) return null;
+/**
+ * Parse and validate a context-diagram widget body.
+ * Supports two formats:
+ * 1. JSON body: The entire body is a JSON object matching DiagramSchema
+ * 2. Key-value: `diagram: <json-string>` where the value is parsed as JSON
+ *
+ * Returns null if validation fails, logging a warning with the error details.
+ */
+function normalizeContextDiagram(body: string, props: Record<string, string | string[]>): WidgetConfig | null {
+  let diagramData: unknown = null;
 
-  const normalizedType = type.toLowerCase().replace('trade_off', 'trade-off');
+  // Try to parse the entire body as JSON first
+  const trimmedBody = body.trim();
+  if (trimmedBody.startsWith('{')) {
+    diagramData = tryParseJson(trimmedBody);
+  }
+
+  // Fall back to the 'diagram' key-value pair
+  if (diagramData === null) {
+    const diagramStr = asString(props.diagram);
+    if (diagramStr) {
+      diagramData = tryParseJson(diagramStr);
+    }
+  }
+
+  if (diagramData === null) {
+    console.warn('[lessonParser] context-diagram: Could not parse diagram data as JSON');
+    return null;
+  }
+
+  // Validate against DiagramSchema
+  const result = DiagramSchema.safeParse(diagramData);
+  if (!result.success) {
+    const errors = result.error.issues
+      .map(i => `  • ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+    console.warn(
+      `[lessonParser] context-diagram: Diagram could not be rendered due to structural issues.\n${errors}`
+    );
+    return null;
+  }
+
+  const diagram: Diagram = result.data;
+
+  const widget: WidgetConfig = {
+    id: '',
+    type: 'context-diagram',
+    props: {
+      diagram,
+    },
+  };
+
+  const validation = WidgetConfigSchema.safeParse(widget);
+  return validation.success ? validation.data : null;
+}
+
+function normalizeWidget(type: string, body: string, props: Record<string, string | string[]>): WidgetConfig | null {
+  // Empty body = no props at all = clearly a mistake, skip it
+  if (Object.keys(props).length === 0 && !body.trim().startsWith('{')) return null;
+
+  const normalizedType = type.toLowerCase().replace('trade_off', 'trade-off').replace('context_diagram', 'context-diagram');
 
   switch (normalizedType) {
     case 'sandbox':
@@ -215,6 +283,8 @@ function normalizeWidget(type: string, props: Record<string, string | string[]>)
       return normalizeMutator(props);
     case 'trade-off':
       return normalizeTradeOff(props);
+    case 'context-diagram':
+      return normalizeContextDiagram(body, props);
     default:
       return null;
   }
@@ -243,7 +313,7 @@ export function parseFocusedLesson(
   const markdown = cleaned.replace(WIDGET_BLOCK_RE, (_match, type: string, body: string) => {
     widgetCounter++;
     const props = parseWidgetBody(body);
-    const widget = normalizeWidget(type, props);
+    const widget = normalizeWidget(type, body, props);
 
     if (!widget) {
       // Invalid widget — remove the marker entirely, leave surrounding text

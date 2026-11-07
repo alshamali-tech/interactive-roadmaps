@@ -18,7 +18,7 @@ import { NoteWidget } from '@/components/widgets/NoteWidget';
 import { CalloutWidget } from '@/components/widgets/CalloutWidget';
 import { VideoWidget } from '@/components/widgets/VideoWidget';
 import { Mutator } from '@/components/universal/Mutator';
-import { NodeGraph } from '@/components/universal/NodeGraph';
+import { ContextDiagram } from '@/components/universal/ContextDiagram';
 import { TradeOff } from '@/components/universal/TradeOff';
 import { TcpIpHandshake } from '@/components/custom/TcpIpHandshake';
 
@@ -202,6 +202,6 @@ widgetRegistry
   .register('callout', CalloutWidget)
   .register('video', VideoWidget)
   .register('mutator', Mutator)
-  .register('node-graph', NodeGraph)
+  .register('context-diagram', ContextDiagram as unknown as WidgetComponent<WidgetProps>)
   .register('trade-off', TradeOff)
   .register('tcp-ip', TcpIpHandshake);

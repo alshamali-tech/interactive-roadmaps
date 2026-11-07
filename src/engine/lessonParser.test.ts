@@ -328,6 +328,98 @@ End.`;
     }
   });
 
+  // ─── Context Diagram ─────────────────────────────────────────
+
+  it('parses a context-diagram widget with JSON body', () => {
+    const raw = `Here is how a web request flows through the system:
+
+:::widget context-diagram
+{"type":"flow","title":"Web Request Flow","nodes":[{"id":"client","label":"Client","type":"input"},{"id":"server","label":"Server","type":"process"},{"id":"response","label":"Response","type":"output"}],"edges":[{"from":"client","to":"server"},{"from":"server","to":"response"}]}
+:::
+
+After diagram.`;
+
+    const result = parseFocusedLesson(raw, 'lesson-1');
+
+    expect(result.widgets).toHaveLength(1);
+    const w = result.widgets[0];
+    expect(w.type).toBe('context-diagram');
+    expect(w.id).toBe('lesson-1-widget-1');
+    if (w.type === 'context-diagram') {
+      expect(w.props.diagram.type).toBe('flow');
+      expect(w.props.diagram.title).toBe('Web Request Flow');
+      expect(w.props.diagram.nodes).toHaveLength(3);
+      expect(w.props.diagram.edges).toHaveLength(2);
+    }
+    expect(result.markdown).toContain('<widget id="lesson-1-widget-1" />');
+  });
+
+  it('parses a context-diagram widget with key-value format', () => {
+    const raw = `Architecture:
+
+:::widget context-diagram
+diagram: {"type":"architecture","title":"System Components","nodes":[{"id":"ui","label":"UI Layer","type":"input"},{"id":"api","label":"API","type":"service"},{"id":"db","label":"Database","type":"storage"}],"edges":[{"from":"ui","to":"api"},{"from":"api","to":"db"}]}
+:::
+
+End.`;
+
+    const result = parseFocusedLesson(raw, 'lesson-1');
+
+    expect(result.widgets).toHaveLength(1);
+    const w = result.widgets[0];
+    expect(w.type).toBe('context-diagram');
+    if (w.type === 'context-diagram') {
+      expect(w.props.diagram.type).toBe('architecture');
+      expect(w.props.diagram.title).toBe('System Components');
+    }
+  });
+
+  it('skips context-diagram with invalid JSON', () => {
+    const raw = `Text.
+
+:::widget context-diagram
+diagram: {not valid json}
+:::
+
+End.`;
+
+    const result = parseFocusedLesson(raw, 'lesson-1');
+
+    // Invalid JSON means widget is skipped
+    expect(result.widgets).toHaveLength(0);
+    expect(result.markdown).toContain('Text.');
+  });
+
+  it('skips context-diagram with orphan nodes (validation failure)', () => {
+    const raw = `Text.
+
+:::widget context-diagram
+{"type":"flow","title":"Bad Diagram","nodes":[{"id":"a","label":"Node A","type":"process"},{"id":"b","label":"Node B","type":"process"},{"id":"orphan","label":"Orphan","type":"process"}],"edges":[{"from":"a","to":"b"}]}
+:::
+
+End.`;
+
+    const result = parseFocusedLesson(raw, 'lesson-1');
+
+    // Orphan node means validation fails — widget is skipped
+    expect(result.widgets).toHaveLength(0);
+  });
+
+  it('handles context_diagram (underscore) as context-diagram', () => {
+    const raw = `Text.
+
+:::widget context_diagram
+{"type":"flow","title":"Test","nodes":[{"id":"a","label":"Start","type":"input"},{"id":"b","label":"End","type":"output"}],"edges":[{"from":"a","to":"b"}]}
+:::
+
+End.`;
+
+    const result = parseFocusedLesson(raw, 'lesson-1');
+
+    expect(result.widgets).toHaveLength(1);
+    expect(result.widgets[0].type).toBe('context-diagram');
+  });
+
   // ─── Realistic output ─────────────────────────────────────────
 
   it('parses a realistic full lesson', () => {

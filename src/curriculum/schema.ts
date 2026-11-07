@@ -103,58 +103,34 @@ export interface MutatorProps extends WidgetProps {
 }
 
 /**
- * Props for a node-graph widget — the drag-and-drop pipeline builder.
+ * Props for a context-diagram widget — AI-generated interactive diagrams.
  *
- * Renders a React Flow canvas with custom node types (input, process,
- * condition, output) and edges. Includes a "Run Pipeline" button that
- * simulates topological execution order with animated status indicators.
+ * Renders a read-only, interactive diagram using React Flow. Users can
+ * click nodes to see details but cannot drag or modify the structure.
+ * Replaces the old NodeGraph widget.
  *
  * @example
  * ```ts
  * {
- *   initialNodes: [
- *     { id: 'source', type: 'input', position: { x: 0, y: 0 }, label: 'Data Source' },
- *     { id: 'filter', type: 'process', position: { x: 250, y: 0 }, label: 'Filter' },
- *     { id: 'output', type: 'output', position: { x: 500, y: 0 }, label: 'Output' },
- *   ],
- *   initialEdges: [
- *     { id: 'e1', source: 'source', target: 'filter' },
- *     { id: 'e2', source: 'filter', target: 'output' },
- *   ],
+ *   diagram: {
+ *     type: 'flow',
+ *     title: 'Request Processing',
+ *     nodes: [
+ *       { id: 'start', label: 'Start', type: 'input' },
+ *       { id: 'process', label: 'Process', type: 'process' },
+ *       { id: 'end', label: 'End', type: 'output' },
+ *     ],
+ *     edges: [
+ *       { from: 'start', to: 'process' },
+ *       { from: 'process', to: 'end' },
+ *     ],
+ *   },
  * }
  * ```
  */
-export interface NodeGraphProps extends WidgetProps {
-  /** Initial nodes on the canvas. Each node has an id, optional type, position, label, and description. */
-  initialNodes: Array<{
-    /** Unique node identifier */
-    id: string;
-    /** Visual node type — determines color and styling */
-    type?: 'input' | 'process' | 'output' | 'condition';
-    /** Canvas position {x, y} in pixels */
-    position: { x: number; y: number };
-    /** Display label shown inside the node */
-    label: string;
-    /** Optional secondary description text */
-    description?: string;
-  }>;
-  /** Initial edges (connections) between nodes */
-  initialEdges: Array<{
-    /** Unique edge identifier */
-    id: string;
-    /** Source node id */
-    source: string;
-    /** Target node id */
-    target: string;
-    /** Optional label displayed on the edge */
-    label?: string;
-    /** Whether the edge has a flowing animation */
-    animated?: boolean;
-  }>;
-  /** Optional title displayed in the widget header */
-  title?: string;
-  /** Enable playground mode — adds toolbar for adding nodes and clearing canvas */
-  playground?: boolean;
+export interface ContextDiagramProps extends WidgetProps {
+  /** The diagram data (nodes, edges, type, title) */
+  diagram: import('@/engine/generatorSchema').Diagram;
 }
 
 /**
@@ -308,10 +284,10 @@ export interface MutatorWidget {
   props: MutatorProps;
 }
 
-export interface NodeGraphWidget {
+export interface ContextDiagramWidget {
   id: string;
-  type: 'node-graph';
-  props: NodeGraphProps;
+  type: 'context-diagram';
+  props: ContextDiagramProps;
 }
 
 export interface TradeOffWidget {
@@ -339,7 +315,7 @@ export type WidgetConfig =
   | CalloutWidget
   | SandboxWidget
   | MutatorWidget
-  | NodeGraphWidget
+  | ContextDiagramWidget
   | TradeOffWidget
   | TcpIpHandshakeWidget;
 

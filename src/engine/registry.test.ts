@@ -3,7 +3,7 @@ import { widgetRegistry } from './registry';
 
 describe('Widget Registry', () => {
   it('registry contains all required widget types', () => {
-    const requiredTypes = ['sandbox', 'mutator', 'node-graph', 'diagram', 'quiz', 'note', 'callout', 'video', 'code-editor'];
+    const requiredTypes = ['sandbox', 'mutator', 'context-diagram', 'diagram', 'quiz', 'note', 'callout', 'video', 'code-editor'];
     requiredTypes.forEach(type => {
       expect(widgetRegistry.has(type)).toBe(true);
     });
