@@ -461,6 +461,7 @@ describe('generateDiagram', () => {
     expect(result.diagram).not.toBeNull();
     expect(result.widgetConfig).not.toBeNull();
     expect(result.textOnlyFallback).toBe(false);
+    expect(result.fallbackText).toBeNull(); // No fallback needed
     expect(result.error).toBeUndefined();
   });
 
@@ -492,6 +493,7 @@ describe('generateDiagram', () => {
     expect(mockFn).toHaveBeenCalledTimes(3);
     expect(result.widgetConfig).not.toBeNull();
     expect(result.textOnlyFallback).toBe(false);
+    expect(result.fallbackText).toBeNull();
   });
 
   it('falls back to text-only after max retries exhausted', async () => {
@@ -500,7 +502,8 @@ describe('generateDiagram', () => {
       .mockResolvedValueOnce('Text explanation...')
       .mockResolvedValueOnce(JSON.stringify({ bad: 'data' })) // Attempt 1
       .mockResolvedValueOnce(JSON.stringify({ bad: 'data' })) // Attempt 2 (strict)
-      .mockResolvedValueOnce(JSON.stringify({ bad: 'data' })); // Attempt 3 (strict)
+      .mockResolvedValueOnce(JSON.stringify({ bad: 'data' })) // Attempt 3 (strict)
+      .mockResolvedValueOnce('1. Step one\n2. Step two\n3. Step three'); // Fallback text
 
     const result = await generateDiagram(mockSettings, {
       topic: 'Topic',
@@ -511,6 +514,28 @@ describe('generateDiagram', () => {
     expect(result.diagram).toBeNull();
     expect(result.widgetConfig).toBeNull();
     expect(result.textOnlyFallback).toBe(true);
+    expect(result.fallbackText).toContain('Step one');
+    expect(result.error).toContain('Stage 2');
+  });
+
+  it('still returns text when fallback generation also fails', async () => {
+    const mockFn = vi.mocked(aiService.generateRawCompletion);
+    mockFn
+      .mockResolvedValueOnce('Text explanation...')
+      .mockResolvedValueOnce(JSON.stringify({ bad: 'data' })) // Attempt 1
+      .mockResolvedValueOnce(JSON.stringify({ bad: 'data' })) // Attempt 2 (strict)
+      .mockRejectedValueOnce(new Error('Fallback AI call failed')); // Fallback prompt fails
+
+    const result = await generateDiagram(mockSettings, {
+      topic: 'Topic',
+      maxRetries: 1,
+    });
+
+    expect(result.text).toContain('Text explanation');
+    expect(result.diagram).toBeNull();
+    expect(result.widgetConfig).toBeNull();
+    expect(result.textOnlyFallback).toBe(true);
+    expect(result.fallbackText).toBeNull(); // Fallback generation failed
     expect(result.error).toContain('Stage 2');
   });
 
@@ -521,6 +546,7 @@ describe('generateDiagram', () => {
     expect(result.diagram).toBeNull();
     expect(result.widgetConfig).toBeNull();
     expect(result.textOnlyFallback).toBe(true);
+    expect(result.fallbackText).toBeNull();
     expect(result.error).toContain('Either');
   });
 
@@ -533,6 +559,7 @@ describe('generateDiagram', () => {
     expect(result.text).toContain('Failed to generate');
     expect(result.widgetConfig).toBeNull();
     expect(result.textOnlyFallback).toBe(true);
+    expect(result.fallbackText).toBeNull();
     expect(result.error).toContain('Stage 1');
   });
 
