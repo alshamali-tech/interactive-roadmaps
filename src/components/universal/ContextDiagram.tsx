@@ -24,7 +24,8 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Diagram, DiagramNode, DiagramEdge, DiagramNodeType } from '@/engine/generatorSchema';
+import type { Diagram, DiagramNode, DiagramNodeType } from '@/engine/generatorSchema';
+import { calculateDiagramLayout } from '@/lib/diagramLayout';
 
 interface ContextDiagramProps {
   diagram: Diagram;
@@ -114,75 +115,6 @@ const nodeTypes = {
   service: DiagramNodeComponent,
 };
 
-function computeLayout(nodes: DiagramNode[], edges: DiagramEdge[]) {
-  const inDegree = new Map<string, number>();
-  const outEdges = new Map<string, string[]>();
-  
-  nodes.forEach(n => {
-    inDegree.set(n.id, 0);
-    outEdges.set(n.id, []);
-  });
-  
-  edges.forEach(e => {
-    inDegree.set(e.to, (inDegree.get(e.to) || 0) + 1);
-    outEdges.get(e.from)?.push(e.to);
-  });
-
-  const roots = nodes.filter(n => (inDegree.get(n.id) || 0) === 0);
-  if (roots.length === 0 && nodes.length > 0) {
-    roots.push(nodes[0]);
-  }
-
-  const levels = new Map<string, number>();
-  const queue = roots.map(r => ({ id: r.id, level: 0 }));
-  
-  while (queue.length > 0) {
-    const { id, level } = queue.shift()!;
-    if (levels.has(id)) continue;
-    levels.set(id, level);
-    
-    const children = outEdges.get(id) || [];
-    children.forEach(childId => {
-      if (!levels.has(childId)) {
-        queue.push({ id: childId, level: level + 1 });
-      }
-    });
-  }
-
-  const levelGroups = new Map<number, DiagramNode[]>();
-  nodes.forEach(n => {
-    const lvl = levels.get(n.id) || 0;
-    if (!levelGroups.has(lvl)) levelGroups.set(lvl, []);
-    levelGroups.get(lvl)!.push(n);
-  });
-
-  const xSpacing = 250;
-  const ySpacing = 150;
-
-  const layoutNodes: CustomNode[] = [];
-  
-  levelGroups.forEach((group, lvl) => {
-    const totalWidth = group.length * xSpacing;
-    const startX = -totalWidth / 2 + xSpacing / 2;
-    
-    group.forEach((n, idx) => {
-      layoutNodes.push({
-        id: n.id,
-        type: n.type,
-        position: { x: startX + idx * xSpacing, y: lvl * ySpacing },
-        data: {
-          label: n.label,
-          description: n.description,
-          index: layoutNodes.length,
-          onClick: () => {}, // Will be overridden
-        },
-      });
-    });
-  });
-
-  return layoutNodes;
-}
-
 const diagramTypeLabels: Record<string, string> = {
   flow: 'Flow Diagram',
   relationship: 'Relationship Diagram',
@@ -197,18 +129,22 @@ export function ContextDiagram({ diagram, onExplainThisDiagram }: ContextDiagram
   const [edges, setEdges] = useState<Edge[]>([]);
 
   useEffect(() => {
-    const computedNodes = computeLayout(diagram.nodes, diagram.edges);
-    const nodesWithClick = computedNodes.map(n => ({
-      ...n,
+    const layoutResult = calculateDiagramLayout(diagram.nodes, diagram.edges, diagram.type);
+    const computedNodes: CustomNode[] = layoutResult.nodes.map((n, index) => ({
+      id: n.id,
+      type: n.type,
+      position: n.position,
       data: {
-        ...n.data,
+        label: n.label,
+        description: n.description,
+        index,
         onClick: () => {
           const node = diagram.nodes.find(nd => nd.id === n.id);
           if (node?.description) setSelectedNode(node);
         }
-      }
+      },
     }));
-    setLayoutNodes(nodesWithClick);
+    setLayoutNodes(computedNodes);
 
     const flowEdges: Edge[] = diagram.edges.map((e, i) => ({
       id: `e-${i}`,
