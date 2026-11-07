@@ -147,6 +147,34 @@ export const DiagramSchema = z
       return !hasCycle(data.nodes, data.edges);
     },
     { message: 'Flow diagrams must be acyclic — no loops or cycles allowed.' }
+  )
+  .refine(
+    (data) => {
+      // Must have at least one 'input' node (start node)
+      return data.nodes.some((n) => n.type === 'input');
+    },
+    { message: 'Diagram must have at least one start node (type: "input").' }
+  )
+  .refine(
+    (data) => {
+      // Must have at least one 'output' node (end node)
+      return data.nodes.some((n) => n.type === 'output');
+    },
+    { message: 'Diagram must have at least one end node (type: "output").' }
+  )
+  .refine(
+    (data) => {
+      // Decision nodes must have at least 2 outgoing edges
+      const decisionNodes = data.nodes.filter((n) => n.type === 'decision');
+      for (const node of decisionNodes) {
+        const outgoingEdges = data.edges.filter((e) => e.from === node.id);
+        if (outgoingEdges.length < 2) {
+          return false;
+        }
+      }
+      return true;
+    },
+    { message: 'Decision nodes must have at least 2 outgoing edges.' }
   );
 
 export type Diagram = z.infer<typeof DiagramSchema>;

@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ContextDiagram } from './ContextDiagram';
 import type { Diagram } from '@/engine/generatorSchema';
+
+// Mock framer-motion to disable animations in tests
+vi.mock('framer-motion', () => ({
+  motion: {
+    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  },
+  AnimatePresence: ({ children }: any) => <>{children}</>,
+}));
 
 // Mock matchMedia for useMediaQuery hook
 Object.defineProperty(window, 'matchMedia', {
@@ -86,5 +94,63 @@ describe('ContextDiagram', () => {
   it('does not render the "Explain This Diagram" button when no callback is provided', () => {
     render(<ContextDiagram diagram={mockDiagram} />);
     expect(screen.queryByText('Explain This Diagram')).not.toBeInTheDocument();
+  });
+
+  it('shows popover when clicking a mobile card with description', () => {
+    // Mock mobile viewport
+    (window.matchMedia as any).mockImplementation((query: string) => ({
+      matches: query === '(max-width: 768px)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    render(<ContextDiagram diagram={mockDiagram} />);
+
+    // In mobile mode, click the first card (Start node)
+    const startCard = screen.getByText('Start').closest('div[class*="cursor-pointer"]');
+    expect(startCard).toBeInTheDocument();
+
+    fireEvent.click(startCard!);
+
+    // Check if popover appears with the description
+    expect(screen.getByText('The beginning of the flow')).toBeInTheDocument();
+  });
+
+  it('renders mobile layout as vertical cards when screen is small', () => {
+    // Mock matchMedia to return true for mobile
+    (window.matchMedia as any).mockImplementation((query: string) => ({
+      matches: query === '(max-width: 768px)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    render(<ContextDiagram diagram={mockDiagram} />);
+    
+    // In mobile layout, we should see the card container
+    expect(screen.getByText('Start')).toBeInTheDocument();
+    expect(screen.getByText('Process Data')).toBeInTheDocument();
+    // The React Flow wrapper should NOT be present in mobile mode (replaced by cards)
+    expect(screen.queryByTestId('rf__wrapper')).not.toBeInTheDocument();
+  });
+
+  it('shows fallback message for empty nodes array', () => {
+    const emptyDiagram: Diagram = {
+      type: 'flow',
+      title: 'Empty Diagram',
+      nodes: [],
+      edges: [],
+    };
+    render(<ContextDiagram diagram={emptyDiagram} />);
+    expect(screen.getByText(/no nodes to display/i)).toBeInTheDocument();
   });
 });

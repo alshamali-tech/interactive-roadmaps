@@ -128,6 +128,14 @@ export function ContextDiagram({ diagram, onExplainThisDiagram }: ContextDiagram
   const [layoutNodes, setLayoutNodes] = useState<CustomNode[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
+  if (diagram.nodes.length === 0) {
+    return (
+      <div className="my-5 rounded-lg border border-border overflow-hidden bg-card shadow-sm p-8 text-center">
+        <p className="text-muted-foreground text-sm">No nodes to display in this diagram.</p>
+      </div>
+    );
+  }
+
   useEffect(() => {
     const layoutResult = calculateDiagramLayout(diagram.nodes, diagram.edges, diagram.type);
     const computedNodes: CustomNode[] = layoutResult.nodes.map((n, index) => ({
