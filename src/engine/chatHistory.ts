@@ -12,11 +12,25 @@
 const STORAGE_KEY_PREFIX = 'sea-chat-';
 const MAX_STORED_MESSAGES = 50;
 
+export interface MessageMetadata {
+  // Interview mode metadata
+  score?: number; // 1-5 scale
+  feedback?: {
+    strengths?: string;
+    improvements?: string;
+    correct?: boolean;
+  };
+  // Challenge mode metadata
+  correct?: boolean;
+  explanation?: string;
+}
+
 export interface StoredMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  metadata?: MessageMetadata;
 }
 
 /**
@@ -80,6 +94,7 @@ function isValidStoredMessage(m: unknown): m is StoredMessage {
     typeof obj.id === 'string' &&
     (obj.role === 'user' || obj.role === 'assistant') &&
     typeof obj.content === 'string' &&
-    typeof obj.timestamp === 'number'
+    typeof obj.timestamp === 'number' &&
+    (obj.metadata === undefined || typeof obj.metadata === 'object')
   );
 }

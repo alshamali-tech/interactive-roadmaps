@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Square, GraduationCap, Trash2 } from 'lucide-react';
+import { Send, Square, Trash2, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   getPromptsByContext,
@@ -14,7 +14,14 @@ import {
   saveConversation,
   clearConversation,
   type StoredMessage,
+  type MessageMetadata,
 } from '@/engine/chatHistory';
+import {
+  type ChatMode,
+  type DifficultyLevel,
+  getPersonaConfig,
+  buildSystemPrompt,
+} from '@/engine/chatPersona';
 
 interface ChatMessage {
   id: string;
@@ -22,6 +29,7 @@ interface ChatMessage {
   content: string;
   timestamp: Date;
   isStreaming?: boolean;
+  metadata?: MessageMetadata;
 }
 
 interface SocraticChatProps {
@@ -40,7 +48,52 @@ interface SocraticChatProps {
   sectionTitles?: string[];
   /** Pre-fill the input and focus it (e.g., from a contextual "Ask AI" click) */
   prefilledMessage?: string;
+  /** Chat mode: tutor (default), interview, or challenge */
+  mode?: ChatMode;
+  /** Topic for interview mode (required when mode='interview') */
+  topic?: string;
+  /** Difficulty level for interview/challenge modes */
+  difficulty?: DifficultyLevel;
+  /** Time limit in minutes for interview/challenge modes */
+  timeLimit?: number;
+  /** Maximum questions for interview mode (default: 5) */
+  maxQuestions?: number;
 }
+
+/**
+ * Parse metadata from AI response content
+ * Extracts JSON from markdown code blocks and validates structure based on mode
+ */
+export const parseMetadataFromContent = (
+  content: string,
+  mode: ChatMode
+): MessageMetadata | undefined => {
+  if (mode === 'tutor') return undefined;
+
+  // Try to extract JSON from markdown code blocks
+  const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1].trim());
+      // Validate structure based on mode
+      if (mode === 'interview' && typeof parsed.score === 'number' && parsed.feedback) {
+        return {
+          score: parsed.score,
+          feedback: parsed.feedback,
+        };
+      }
+      if (mode === 'challenge' && typeof parsed.correct === 'boolean' && parsed.explanation) {
+        return {
+          correct: parsed.correct,
+          explanation: parsed.explanation,
+        };
+      }
+    } catch {
+      // JSON parsing failed, no metadata
+    }
+  }
+  return undefined;
+};
 
 export function SocraticChat({
   context = 'global',
@@ -55,17 +108,59 @@ export function SocraticChat({
   currentSection,
   sectionTitles,
   prefilledMessage,
+  mode = 'tutor',
+  topic,
+  difficulty = 'mid',
+  timeLimit,
+  maxQuestions = 5,
 }: SocraticChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   // Track whether we've loaded persisted conversation for this lesson
   const loadedRef = useRef(false);
 
+  // Get persona configuration for current mode
+  const persona = useMemo(() => getPersonaConfig(mode), [mode]);
+
+  // Timer state for interview/challenge modes
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(
+    timeLimit ? timeLimit * 60 : null
+  );
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const aiConnected = useSettingsStore((s) => s.isAIConnected);
   const { streamingText, isLoading, error, startStream, abortStream } = useAIStream();
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Start countdown timer when in interview/challenge mode with timeLimit
+  useEffect(() => {
+    if (timeLimit && (mode === 'interview' || mode === 'challenge')) {
+      setTimeRemaining(timeLimit * 60);
+      timerRef.current = setInterval(() => {
+        setTimeRemaining((prev) => {
+          if (prev === null || prev <= 0) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+      };
+    }
+  }, [timeLimit, mode]);
+
+  // Format time remaining as MM:SS
+  const formatTime = (seconds: number | null): string => {
+    if (seconds === null) return '';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // ── Pick prompts: lesson-aware if possible, otherwise context-based ────
   const prompts: PromptStarter[] = useMemo(() => {
@@ -93,6 +188,7 @@ export function SocraticChat({
           role: m.role,
           content: m.content,
           timestamp: new Date(m.timestamp),
+          metadata: m.metadata,
         }))
       );
     }
@@ -109,6 +205,7 @@ export function SocraticChat({
         role: m.role as 'user' | 'assistant',
         content: m.content,
         timestamp: m.timestamp.getTime(),
+        metadata: m.metadata,
       }));
     saveConversation(lessonId, toStore);
   }, [messages, lessonId]);
@@ -166,9 +263,11 @@ export function SocraticChat({
       setMessages((prev) => {
         const lastMsg = prev[prev.length - 1];
         if (lastMsg?.isStreaming) {
+          // Parse metadata from the completed message
+          const metadata = parseMetadataFromContent(lastMsg.content, mode);
           return [
             ...prev.slice(0, -1),
-            { ...lastMsg, isStreaming: false },
+            { ...lastMsg, isStreaming: false, metadata },
           ];
         }
         return prev;
@@ -187,7 +286,7 @@ export function SocraticChat({
         ]);
       }
     }
-  }, [isLoading, error]);
+  }, [isLoading, error, mode]);
 
   const doClear = () => {
     abortStream();
@@ -207,7 +306,25 @@ export function SocraticChat({
       timestamp: new Date(),
     };
 
-    const updatedMessages = [...messages, userMessage];
+    let updatedMessages = [...messages, userMessage];
+
+    // Add system message on first send if not already present
+    if (messages.length === 0 || messages[0].role !== 'system') {
+      const systemPrompt = buildSystemPrompt(mode, {
+        lessonTitle,
+        topic,
+        difficulty,
+        maxQuestions,
+      });
+      const systemMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'system',
+        content: systemPrompt,
+        timestamp: new Date(),
+      };
+      updatedMessages = [systemMessage, ...updatedMessages];
+    }
+
     setMessages(updatedMessages);
     setInput('');
 
@@ -225,16 +342,40 @@ export function SocraticChat({
     if (!aiConnected) {
       setTimeout(() => {
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  content:
-                    "I'm the Socratic Tutor. I'll help guide you to the answer, but I won't give it away! (Note: Connect your AI provider in Settings to enable real responses.)",
-                  isStreaming: false,
-                }
-              : m
-          )
+          prev.map((m) => {
+            if (m.id === assistantId) {
+              let content = '';
+              let metadata: MessageMetadata | undefined;
+
+              if (mode === 'tutor') {
+                content = "I'm the Socratic Tutor. I'll help guide you to the answer, but I won't give it away! (Note: Connect your AI provider in Settings to enable real responses.)";
+              } else if (mode === 'interview') {
+                content = "Great answer! Let me evaluate it.\n\n```json\n{\n  \"score\": 4,\n  \"feedback\": {\n    \"strengths\": \"Clear explanation\",\n    \"improvements\": \"Could add more detail\",\n    \"correct\": true\n  }\n}\n```\n\n(Note: Connect your AI provider in Settings to enable real responses.)";
+                metadata = {
+                  score: 4,
+                  feedback: {
+                    strengths: 'Clear explanation',
+                    improvements: 'Could add more detail',
+                    correct: true,
+                  },
+                };
+              } else if (mode === 'challenge') {
+                content = "Let me evaluate your answer.\n\n```json\n{\n  \"correct\": true,\n  \"explanation\": \"Your understanding is correct!\"\n}\n```\n\n(Note: Connect your AI provider in Settings to enable real responses.)";
+                metadata = {
+                  correct: true,
+                  explanation: 'Your understanding is correct!',
+                };
+              }
+
+              return {
+                ...m,
+                content,
+                metadata,
+                isStreaming: false,
+              };
+            }
+            return m;
+          })
         );
       }, 1000);
       return;
@@ -298,11 +439,22 @@ export function SocraticChat({
       {/* Chat Header - Only show in card variant */}
       {variant === 'card' && (
         <div className="flex items-center gap-2 bg-muted/50 px-4 py-2 border-b border-border">
-          <GraduationCap className="size-4 text-primary" />
-          <span className="text-sm font-semibold text-foreground">AI Tutor</span>
-          {lessonTitle && (
+          <span className="text-lg">{persona.icon}</span>
+          <span className="text-sm font-semibold text-foreground">{persona.title}</span>
+          {lessonTitle && mode === 'tutor' && (
             <span className="text-xs text-muted-foreground truncate max-w-[200px]">
               · {lessonTitle}
+            </span>
+          )}
+          {mode === 'interview' && topic && (
+            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+              · {topic}
+            </span>
+          )}
+          {persona.behavior.showTimer && timeRemaining !== null && (
+            <span className="flex items-center gap-1 text-xs font-mono text-muted-foreground">
+              <Clock className="size-3" />
+              {formatTime(timeRemaining)}
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -343,40 +495,99 @@ export function SocraticChat({
       >
         {messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 text-muted-foreground">
-            <span className="text-3xl">💬</span>
+            <span className="text-3xl">{persona.icon}</span>
             <p className="text-sm italic">
-              Ask me anything about this lesson. I'll guide you, not give you
-              answers.
+              {mode === 'tutor' && 'Ask me anything about this lesson. I\'ll guide you, not give you answers.'}
+              {mode === 'interview' && `Ready for your mock interview on ${topic || 'the topic'}. Answer my questions to receive scored feedback.`}
+              {mode === 'challenge' && 'Test your knowledge with a focused question. Answer to receive immediate feedback.'}
             </p>
           </div>
         ) : (
           messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={cn(
-                'flex',
-                msg.role === 'user' ? 'justify-end' : 'justify-start'
-              )}
-            >
+            <div key={msg.id} className="flex flex-col gap-1">
               <div
                 className={cn(
-                  'rounded-lg p-3 max-w-[80%] text-sm leading-relaxed whitespace-pre-wrap',
-                  msg.role === 'user'
-                    ? 'bg-blue-500 text-white'
-                    : msg.role === 'system'
-                    ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
-                    : 'bg-slate-100 dark:bg-slate-800 text-foreground'
+                  'flex',
+                  msg.role === 'user' ? 'justify-end' : 'justify-start'
                 )}
               >
-                {msg.content ||
-                  (msg.isStreaming ? (
-                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                      <span className="inline-block w-2 h-4 bg-current animate-pulse" />
-                    </span>
-                  ) : (
-                    ''
-                  ))}
+                <div
+                  className={cn(
+                    'rounded-lg p-3 max-w-[80%] text-sm leading-relaxed whitespace-pre-wrap',
+                    msg.role === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : msg.role === 'system'
+                      ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+                      : persona.colorTheme.secondary + ' text-foreground'
+                  )}
+                >
+                  {msg.content ||
+                    (msg.isStreaming ? (
+                      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                        <span className="inline-block w-2 h-4 bg-current animate-pulse" />
+                      </span>
+                    ) : (
+                      ''
+                    ))}
+                </div>
               </div>
+              
+              {/* Render metadata for interview/challenge modes */}
+              {msg.metadata && !msg.isStreaming && (
+                <div className="flex justify-start">
+                  {mode === 'interview' && msg.metadata.score !== undefined && (
+                    <div className="ml-2 mt-1 px-3 py-2 rounded-lg bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 text-xs">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-purple-700 dark:text-purple-300">
+                          Score: {msg.metadata.score}/5
+                        </span>
+                      </div>
+                      {msg.metadata.feedback && (
+                        <div className="space-y-1 text-purple-900 dark:text-purple-100">
+                          {msg.metadata.feedback.strengths && (
+                            <div>
+                              <span className="font-medium">✓ Strengths: </span>
+                              {msg.metadata.feedback.strengths}
+                            </div>
+                          )}
+                          {msg.metadata.feedback.improvements && (
+                            <div>
+                              <span className="font-medium">⚡ Improvements: </span>
+                              {msg.metadata.feedback.improvements}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {mode === 'challenge' && msg.metadata.correct !== undefined && (
+                    <div
+                      className={cn(
+                        'ml-2 mt-1 px-3 py-2 rounded-lg border text-xs',
+                        msg.metadata.correct
+                          ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
+                          : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'font-semibold mb-1',
+                          msg.metadata.correct
+                            ? 'text-green-700 dark:text-green-300'
+                            : 'text-red-700 dark:text-red-300'
+                        )}
+                      >
+                        {msg.metadata.correct ? '✓ Correct' : '✗ Incorrect'}
+                      </div>
+                      {msg.metadata.explanation && (
+                        <div className="text-gray-700 dark:text-gray-300">
+                          {msg.metadata.explanation}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}
@@ -398,27 +609,30 @@ export function SocraticChat({
             Clear conversation
           </button>
         )}
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-2">
-          {prompts.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => handlePromptClick(p)}
-              disabled={isLoading || !aiConnected}
-              aria-label={p.template}
-              className={cn(
-                'px-3 py-1.5 text-xs rounded-full border cursor-pointer whitespace-nowrap transition-colors',
-                'border-slate-200 dark:border-slate-700',
-                'hover:bg-slate-100 dark:hover:bg-slate-800',
-                'text-foreground',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
-            >
-              {p.icon && <span className="mr-1">{p.icon}</span>}
-              {p.label}
-            </button>
-          ))}
-        </div>
+        {/* Only show prompt pills in tutor mode */}
+        {mode === 'tutor' && (
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-2">
+            {prompts.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => handlePromptClick(p)}
+                disabled={isLoading || !aiConnected}
+                aria-label={p.template}
+                className={cn(
+                  'px-3 py-1.5 text-xs rounded-full border cursor-pointer whitespace-nowrap transition-colors',
+                  'border-slate-200 dark:border-slate-700',
+                  'hover:bg-slate-100 dark:hover:bg-slate-800',
+                  'text-foreground',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                {p.icon && <span className="mr-1">{p.icon}</span>}
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex gap-2 items-end">
           <textarea
@@ -428,13 +642,23 @@ export function SocraticChat({
             onKeyDown={handleKeyDown}
             rows={1}
             placeholder={
-              placeholder || 'Ask a question or click a prompt starter above...'
+              placeholder ||
+              (mode === 'tutor'
+                ? 'Ask a question or click a prompt starter above...'
+                : mode === 'interview'
+                ? 'Type your answer to the interview question...'
+                : 'Type your answer to the challenge...')
             }
             aria-label="Chat message input"
             disabled={isLoading || !aiConnected}
             className={cn(
               'flex-1 rounded-lg border border-slate-200 dark:border-slate-700 p-3 text-sm',
-              'resize-none focus:outline-none focus:ring-2 focus:ring-blue-500',
+              'resize-none focus:outline-none focus:ring-2',
+              mode === 'tutor'
+                ? 'focus:ring-blue-500'
+                : mode === 'interview'
+                ? 'focus:ring-purple-500'
+                : 'focus:ring-orange-500',
               'bg-background text-foreground',
               'max-h-[120px]',
               'disabled:opacity-60'
@@ -449,7 +673,14 @@ export function SocraticChat({
               'rounded-lg p-3 transition-colors',
               isLoading
                 ? 'bg-red-500 hover:bg-red-600 text-white'
-                : 'bg-blue-500 hover:bg-blue-600 text-white',
+                : cn(
+                    'text-white',
+                    mode === 'tutor'
+                      ? 'bg-blue-500 hover:bg-blue-600'
+                      : mode === 'interview'
+                      ? 'bg-purple-500 hover:bg-purple-600'
+                      : 'bg-orange-500 hover:bg-orange-600'
+                  ),
               'disabled:opacity-40 disabled:cursor-not-allowed'
             )}
           >
