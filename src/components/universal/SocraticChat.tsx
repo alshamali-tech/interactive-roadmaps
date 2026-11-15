@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Square, Trash2, Clock } from 'lucide-react';
+import { Send, Square, Trash2, Clock, CheckCircle2, XCircle, RotateCcw, ArrowRight, Award } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   getPromptsByContext,
@@ -22,6 +22,11 @@ import {
   getPersonaConfig,
   buildSystemPrompt,
 } from '@/engine/chatPersona';
+import {
+  buildChallengeEvaluationPrompt,
+  parseChallengeEvaluation,
+  type ChallengeEvaluation,
+} from '@/engine/challengePrompts';
 
 interface ChatMessage {
   id: string;
@@ -30,6 +35,11 @@ interface ChatMessage {
   timestamp: Date;
   isStreaming?: boolean;
   metadata?: MessageMetadata;
+}
+
+export interface ChallengeQuestion {
+  question: string;
+  modelAnswer: string;
 }
 
 interface SocraticChatProps {
@@ -58,6 +68,8 @@ interface SocraticChatProps {
   timeLimit?: number;
   /** Maximum questions for interview mode (default: 5) */
   maxQuestions?: number;
+  /** Array of challenge questions for challenge mode */
+  challengeQuestions?: ChallengeQuestion[];
 }
 
 /**
@@ -113,11 +125,21 @@ export function SocraticChat({
   difficulty = 'mid',
   timeLimit,
   maxQuestions = 5,
+  challengeQuestions,
 }: SocraticChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   // Track whether we've loaded persisted conversation for this lesson
   const loadedRef = useRef(false);
+
+  // ── Challenge Mode State ──────────────────────────────────────────────
+  const [challengeIndex, setChallengeIndex] = useState(0);
+  const [challengeRetries, setChallengeRetries] = useState(0);
+  const [challengeSubmitted, setChallengeSubmitted] = useState(false);
+  const [challengeEvaluating, setChallengeEvaluating] = useState(false);
+  const [challengeEvaluation, setChallengeEvaluation] = useState<ChallengeEvaluation | null>(null);
+  const [challengeInput, setChallengeInput] = useState('');
+  const MAX_CHALLENGE_RETRIES = 2;
 
   // Get persona configuration for current mode
   const persona = useMemo(() => getPersonaConfig(mode), [mode]);
@@ -129,6 +151,7 @@ export function SocraticChat({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const aiConnected = useSettingsStore((s) => s.isAIConnected);
+  const aiSettings = useSettingsStore((s) => s.aiSettings);
   const { streamingText, isLoading, error, startStream, abortStream } = useAIStream();
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -415,6 +438,287 @@ export function SocraticChat({
     setInput(prompt.template);
     textareaRef.current?.focus();
   };
+
+  // ── Challenge Mode Functions ──────────────────────────────────────────
+  const currentChallenge = challengeQuestions?.[challengeIndex];
+  const hasMultipleChallenges = (challengeQuestions?.length ?? 0) > 1;
+  const isLastChallenge = challengeIndex === (challengeQuestions?.length ?? 1) - 1;
+
+  const submitChallengeAnswer = async () => {
+    if (!challengeInput.trim() || challengeEvaluating || !currentChallenge) return;
+
+    setChallengeSubmitted(true);
+    setChallengeEvaluating(true);
+
+    const userAnswer = challengeInput.trim();
+    const evaluationPrompt = buildChallengeEvaluationPrompt(difficulty);
+
+    const aiMessages: AIServiceMessage[] = [
+      { role: 'system', content: evaluationPrompt },
+      {
+        role: 'user',
+        content: `Question: ${currentChallenge.question}\n\nMy answer: ${userAnswer}\n\nModel answer (for your reference, do not reveal): ${currentChallenge.modelAnswer}\n\nPlease evaluate my answer.`,
+      },
+    ];
+
+    // Fallback: demo evaluation when AI not connected
+    if (!aiConnected) {
+      setTimeout(() => {
+        const isCorrect = Math.random() > 0.5;
+        setChallengeEvaluation({
+          correct: isCorrect,
+          score: isCorrect ? 85 : 35,
+          explanation: isCorrect
+            ? 'Your answer demonstrates good understanding! (Demo evaluation — connect AI for real feedback)'
+            : 'Your answer is partially correct but missing key details. (Demo evaluation — connect AI for real feedback)',
+          modelAnswer: currentChallenge.modelAnswer,
+        });
+        setChallengeEvaluating(false);
+      }, 1000);
+      return;
+    }
+
+    // Use AI service for real evaluation
+    try {
+      const { generateChatCompletion } = await import('@/engine/aiService');
+      const response = await generateChatCompletion(aiMessages, aiSettings);
+      const evaluation = parseChallengeEvaluation(response);
+
+      if (evaluation) {
+        setChallengeEvaluation(evaluation);
+      } else {
+        // Fallback if parsing fails
+        setChallengeEvaluation({
+          correct: false,
+          score: 50,
+          explanation: 'Could not parse evaluation. Your answer has been received.',
+          modelAnswer: currentChallenge.modelAnswer,
+        });
+      }
+    } catch {
+      setChallengeEvaluation({
+        correct: false,
+        score: 0,
+        explanation: 'Evaluation failed. Please try again.',
+        modelAnswer: currentChallenge.modelAnswer,
+      });
+    }
+
+    setChallengeEvaluating(false);
+  };
+
+  const handleTryAgain = () => {
+    if (challengeRetries < MAX_CHALLENGE_RETRIES) {
+      setChallengeRetries((prev) => prev + 1);
+      setChallengeSubmitted(false);
+      setChallengeEvaluation(null);
+      setChallengeInput('');
+    }
+  };
+
+  const handleNextChallenge = () => {
+    if (!isLastChallenge && challengeQuestions) {
+      setChallengeIndex((prev) => prev + 1);
+      setChallengeRetries(0);
+      setChallengeSubmitted(false);
+      setChallengeEvaluation(null);
+      setChallengeInput('');
+    }
+  };
+
+  const handleChallengeKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !challengeSubmitted) {
+      e.preventDefault();
+      submitChallengeAnswer();
+    }
+  };
+
+  // ── Challenge Mode UI ─────────────────────────────────────────────────
+  if (mode === 'challenge' && challengeQuestions && challengeQuestions.length > 0) {
+    return (
+      <div
+        className={cn(
+          'my-6 rounded-lg border-2 border-purple-300 dark:border-purple-700 overflow-hidden bg-card shadow-md',
+          variant === 'panel' && 'h-full flex flex-col'
+        )}
+      >
+        {/* Challenge Header */}
+        <div className="flex items-center gap-2 bg-purple-50 dark:bg-purple-950/40 px-4 py-3 border-b-2 border-purple-200 dark:border-purple-800">
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-purple-600 text-white text-xs font-bold">
+            <Award className="size-3" />
+            CHALLENGE
+          </span>
+          <span className="text-sm font-semibold text-foreground">
+            Question {challengeIndex + 1} of {challengeQuestions.length}
+          </span>
+          {persona.behavior.showTimer && timeRemaining !== null && (
+            <span className="flex items-center gap-1 text-xs font-mono text-purple-700 dark:text-purple-300 ml-auto">
+              <Clock className="size-3" />
+              {formatTime(timeRemaining)}
+            </span>
+          )}
+        </div>
+
+        {/* Challenge Question Card */}
+        <div className="p-4 bg-background">
+          <div className="rounded-lg border-2 border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20 p-4">
+            <p className="text-sm font-medium text-foreground leading-relaxed">
+              {currentChallenge?.question}
+            </p>
+          </div>
+
+          {/* Answer Input */}
+          {!challengeSubmitted && (
+            <div className="mt-4 flex flex-col gap-2">
+              <textarea
+                value={challengeInput}
+                onChange={(e) => setChallengeInput(e.target.value)}
+                onKeyDown={handleChallengeKeyDown}
+                rows={3}
+                placeholder="Type your answer here..."
+                aria-label="Challenge answer input"
+                disabled={challengeEvaluating || !aiConnected}
+                className="w-full rounded-lg border border-purple-300 dark:border-purple-700 p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 bg-background text-foreground disabled:opacity-60"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {challengeRetries > 0 && `Attempt ${challengeRetries + 1}/${MAX_CHALLENGE_RETRIES + 1}`}
+                </span>
+                <button
+                  type="button"
+                  onClick={submitChallengeAnswer}
+                  disabled={!challengeInput.trim() || challengeEvaluating || !aiConnected}
+                  className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                >
+                  {challengeEvaluating ? (
+                    <>
+                      <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Evaluating...
+                    </>
+                  ) : (
+                    <>
+                      Submit Answer
+                      <Send className="size-3" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Evaluation Results */}
+          {challengeSubmitted && challengeEvaluation && (
+            <div className="mt-4 space-y-3">
+              {/* User's Answer */}
+              <div className="rounded-lg p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+                <div className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">
+                  Your Answer:
+                </div>
+                <p className="text-sm text-blue-900 dark:text-blue-100">{challengeInput}</p>
+              </div>
+
+              {/* Score and Correctness */}
+              <div
+                className={cn(
+                  'rounded-lg p-4 border-2',
+                  challengeEvaluation.correct
+                    ? 'bg-green-50 dark:bg-green-950/20 border-green-300 dark:border-green-700'
+                    : 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-700'
+                )}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  {challengeEvaluation.correct ? (
+                    <CheckCircle2 className="size-5 text-green-600 dark:text-green-400" />
+                  ) : (
+                    <XCircle className="size-5 text-red-600 dark:text-red-400" />
+                  )}
+                  <span
+                    className={cn(
+                      'font-bold text-lg',
+                      challengeEvaluation.correct
+                        ? 'text-green-700 dark:text-green-300'
+                        : 'text-red-700 dark:text-red-300'
+                    )}
+                  >
+                    {challengeEvaluation.correct ? 'Correct!' : 'Incorrect'}
+                  </span>
+                  <span
+                    className={cn(
+                      'ml-auto text-sm font-mono font-bold px-2 py-0.5 rounded',
+                      challengeEvaluation.correct
+                        ? 'bg-green-200 dark:bg-green-900/50 text-green-800 dark:text-green-200'
+                        : 'bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-200'
+                    )}
+                  >
+                    {challengeEvaluation.score}/100
+                  </span>
+                </div>
+                <p
+                  className={cn(
+                    'text-sm leading-relaxed',
+                    challengeEvaluation.correct
+                      ? 'text-green-800 dark:text-green-200'
+                      : 'text-red-800 dark:text-red-200'
+                  )}
+                >
+                  {challengeEvaluation.explanation}
+                </p>
+              </div>
+
+              {/* Model Answer */}
+              <div className="rounded-lg p-3 bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700">
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Model Answer:
+                </div>
+                <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">
+                  {challengeEvaluation.modelAnswer}
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-2">
+                {!challengeEvaluation.correct && challengeRetries < MAX_CHALLENGE_RETRIES && (
+                  <button
+                    type="button"
+                    onClick={handleTryAgain}
+                    className="px-4 py-2 rounded-lg border-2 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 text-sm font-medium hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-colors inline-flex items-center gap-2"
+                  >
+                    <RotateCcw className="size-3" />
+                    Try Again ({MAX_CHALLENGE_RETRIES - challengeRetries} left)
+                  </button>
+                )}
+                {hasMultipleChallenges && !isLastChallenge && (
+                  <button
+                    type="button"
+                    onClick={handleNextChallenge}
+                    className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors inline-flex items-center gap-2"
+                  >
+                    Next Challenge
+                    <ArrowRight className="size-3" />
+                  </button>
+                )}
+                {isLastChallenge && (
+                  <span className="text-sm text-muted-foreground italic">
+                    ✓ All challenges complete!
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Evaluating State */}
+          {challengeSubmitted && challengeEvaluating && !challengeEvaluation && (
+            <div className="mt-4 flex items-center justify-center py-8">
+              <div className="flex items-center gap-3 text-purple-600 dark:text-purple-400">
+                <span className="inline-block w-4 h-4 border-2 border-purple-600 dark:border-purple-400 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm font-medium">Evaluating your answer...</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
