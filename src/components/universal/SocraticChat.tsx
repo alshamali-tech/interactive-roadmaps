@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Square, Trash2, Clock, CheckCircle2, XCircle, RotateCcw, ArrowRight, Award } from 'lucide-react';
+import { Send, Square, Trash2, Clock, CheckCircle2, XCircle, RotateCcw, ArrowRight, Award, Pause, Play, SkipForward, Flag, Download, Star, AlertCircle, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   getPromptsByContext,
@@ -28,6 +28,7 @@ import {
   type ChallengeEvaluation,
 } from '@/engine/challengePrompts';
 
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -40,6 +41,38 @@ interface ChatMessage {
 export interface ChallengeQuestion {
   question: string;
   modelAnswer: string;
+}
+
+/** Interview-specific metadata for tracking progress and scores */
+export interface InterviewState {
+  currentQuestion: number;
+  scores: number[];
+  totalQuestions: number;
+  isComplete: boolean;
+  finalEvaluation?: {
+    overallScore: number;
+    strongestAreas: string[];
+    areasForImprovement: string[];
+    recommendedTopics: string[];
+    hiringRecommendation: string;
+    justification: string;
+  };
+}
+
+/** Extended metadata for interview mode */
+export interface InterviewMetadata {
+  score: number;
+  justification?: string;
+  strengths?: string[];
+  gaps?: string[];
+  followUp?: string;
+  hint?: string | null;
+  isFinalEvaluation?: boolean;
+  overallScore?: number;
+  strongestAreas?: string[];
+  areasForImprovement?: string[];
+  recommendedTopics?: string[];
+  hiringRecommendation?: string;
 }
 
 interface SocraticChatProps {
@@ -87,11 +120,30 @@ export const parseMetadataFromContent = (
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[1].trim());
+      
+      // Check for final evaluation (interview mode)
+      if (mode === 'interview' && typeof parsed.overallScore === 'number' && parsed.hiringRecommendation) {
+        return {
+          isFinalEvaluation: true,
+          overallScore: parsed.overallScore,
+          strongestAreas: parsed.strongestAreas || [],
+          areasForImprovement: parsed.areasForImprovement || [],
+          recommendedTopics: parsed.recommendedTopics || [],
+          hiringRecommendation: parsed.hiringRecommendation,
+          justification: parsed.justification || '',
+        };
+      }
+      
       // Validate structure based on mode
-      if (mode === 'interview' && typeof parsed.score === 'number' && parsed.feedback) {
+      if (mode === 'interview' && typeof parsed.score === 'number') {
         return {
           score: parsed.score,
-          feedback: parsed.feedback,
+          feedback: {
+            strengths: parsed.strengths?.join?.('. ') || parsed.feedback?.strengths,
+            improvements: parsed.gaps?.join?.('. ') || parsed.feedback?.improvements,
+            correct: parsed.feedback?.correct,
+            followUp: parsed.followUp,
+          },
         };
       }
       if (mode === 'challenge' && typeof parsed.correct === 'boolean' && parsed.explanation) {
@@ -141,6 +193,15 @@ export function SocraticChat({
   const [challengeInput, setChallengeInput] = useState('');
   const MAX_CHALLENGE_RETRIES = 2;
 
+  // ── Interview Mode State ──────────────────────────────────────────────
+  const [interviewState, setInterviewState] = useState<InterviewState>({
+    currentQuestion: 1,
+    scores: [],
+    totalQuestions: maxQuestions,
+    isComplete: false,
+  });
+  const [timerPaused, setTimerPaused] = useState(false);
+
   // Get persona configuration for current mode
   const persona = useMemo(() => getPersonaConfig(mode), [mode]);
 
@@ -159,8 +220,7 @@ export function SocraticChat({
 
   // Start countdown timer when in interview/challenge mode with timeLimit
   useEffect(() => {
-    if (timeLimit && (mode === 'interview' || mode === 'challenge')) {
-      setTimeRemaining(timeLimit * 60);
+    if (timeLimit && (mode === 'interview' || mode === 'challenge') && !timerPaused) {
       timerRef.current = setInterval(() => {
         setTimeRemaining((prev) => {
           if (prev === null || prev <= 0) {
@@ -175,7 +235,7 @@ export function SocraticChat({
         if (timerRef.current) clearInterval(timerRef.current);
       };
     }
-  }, [timeLimit, mode]);
+  }, [timeLimit, mode, timerPaused]);
 
   // Format time remaining as MM:SS
   const formatTime = (seconds: number | null): string => {
@@ -288,6 +348,34 @@ export function SocraticChat({
         if (lastMsg?.isStreaming) {
           // Parse metadata from the completed message
           const metadata = parseMetadataFromContent(lastMsg.content, mode);
+          
+          // Update interview state based on metadata
+          if (mode === 'interview' && metadata) {
+            // Track score for regular question responses
+            if (metadata.score !== undefined && !metadata.isFinalEvaluation) {
+              setInterviewState((prevState) => ({
+                ...prevState,
+                scores: [...prevState.scores, metadata.score!],
+                currentQuestion: prevState.currentQuestion + 1,
+              }));
+            }
+            // Track final evaluation when interview is complete
+            if (metadata.isFinalEvaluation) {
+              setInterviewState((prevState) => ({
+                ...prevState,
+                isComplete: true,
+                finalEvaluation: {
+                  overallScore: metadata.overallScore || 0,
+                  strongestAreas: metadata.strongestAreas || [],
+                  areasForImprovement: metadata.areasForImprovement || [],
+                  recommendedTopics: metadata.recommendedTopics || [],
+                  hiringRecommendation: metadata.hiringRecommendation || '',
+                  justification: metadata.justification || '',
+                },
+              }));
+            }
+          }
+          
           return [
             ...prev.slice(0, -1),
             { ...lastMsg, isStreaming: false, metadata },
@@ -316,6 +404,16 @@ export function SocraticChat({
     setMessages([]);
     setInput('');
     if (lessonId) clearConversation(lessonId);
+    // Reset interview state
+    if (mode === 'interview') {
+      setInterviewState({
+        currentQuestion: 1,
+        scores: [],
+        totalQuestions: maxQuestions,
+        isComplete: false,
+      });
+      setTimerPaused(false);
+    }
   };
 
   const sendMessage = async () => {
@@ -437,6 +535,97 @@ export function SocraticChat({
   const handlePromptClick = (prompt: PromptStarter) => {
     setInput(prompt.template);
     textareaRef.current?.focus();
+  };
+
+  // ── Interview Mode Functions ──────────────────────────────────────────
+  const handleSkipQuestion = () => {
+    // Add a score of 1 for skipped question and move to next
+    setInterviewState((prev) => ({
+      ...prev,
+      scores: [...prev.scores, 1],
+      currentQuestion: prev.currentQuestion + 1,
+    }));
+    setInput("I don't know the answer to this question.");
+    textareaRef.current?.focus();
+  };
+
+  const handleEndInterviewEarly = async () => {
+    // Trigger final evaluation with current scores
+    setInterviewState((prev) => ({
+      ...prev,
+      isComplete: true,
+    }));
+    // Send a message requesting final evaluation
+    setInput('Please provide the final evaluation based on the questions answered so far.');
+    setTimeout(() => sendMessage(), 100);
+  };
+
+  const handleToggleTimer = () => {
+    setTimerPaused((prev) => !prev);
+  };
+
+  const handleDownloadEvaluation = () => {
+    if (!interviewState.finalEvaluation) return;
+
+    const eval_ = interviewState.finalEvaluation;
+    const avgScore = interviewState.scores.length > 0
+      ? (interviewState.scores.reduce((a, b) => a + b, 0) / interviewState.scores.length).toFixed(1)
+      : 'N/A';
+
+    const markdown = `# Interview Evaluation Report
+
+**Topic:** ${topic || 'General Software Engineering'}
+**Difficulty:** ${difficulty}
+**Date:** ${new Date().toLocaleDateString()}
+
+---
+
+## Overall Score: ${eval_.overallScore}/100
+
+**Hiring Recommendation:** ${eval_.hiringRecommendation}
+
+${eval_.justification}
+
+---
+
+## Question Scores
+
+Average Score: ${avgScore}/5
+
+Individual Scores: ${interviewState.scores.join(', ') || 'None'}
+
+---
+
+## Strongest Areas
+
+${eval_.strongestAreas.map((area) => `- ${area}`).join('\n')}
+
+---
+
+## Areas for Improvement
+
+${eval_.areasForImprovement.map((area) => `- ${area}`).join('\n')}
+
+---
+
+## Recommended Topics for Study
+
+${eval_.recommendedTopics.map((topic) => `- ${topic}`).join('\n')}
+
+---
+
+*Generated by EngineerAcademy Interview Mode*
+`;
+
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `interview-evaluation-${topic?.toLowerCase().replace(/\s+/g, '-') || 'report'}-${new Date().toISOString().split('T')[0]}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // ── Challenge Mode Functions ──────────────────────────────────────────
@@ -755,13 +944,61 @@ export function SocraticChat({
               · {topic}
             </span>
           )}
+          {mode === 'interview' && difficulty && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+              {difficulty}
+            </span>
+          )}
           {persona.behavior.showTimer && timeRemaining !== null && (
-            <span className="flex items-center gap-1 text-xs font-mono text-muted-foreground">
+            <span
+              className={cn(
+                'flex items-center gap-1 text-xs font-mono',
+                timeRemaining < 120 && mode === 'interview'
+                  ? 'text-red-600 dark:text-red-400 animate-pulse'
+                  : 'text-muted-foreground'
+              )}
+            >
               <Clock className="size-3" />
               {formatTime(timeRemaining)}
+              {mode === 'interview' && (
+                <button
+                  type="button"
+                  onClick={handleToggleTimer}
+                  aria-label={timerPaused ? 'Resume timer' : 'Pause timer'}
+                  className="ml-1 p-0.5 rounded hover:bg-muted transition-colors"
+                >
+                  {timerPaused ? <Play className="size-3" /> : <Pause className="size-3" />}
+                </button>
+              )}
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
+            {mode === 'interview' && messages.length > 0 && !interviewState.isComplete && (
+              <>
+                <button
+                  onClick={handleSkipQuestion}
+                  disabled={isLoading}
+                  aria-label="Skip question"
+                  className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300
+                             transition-colors inline-flex items-center gap-1
+                             px-2 py-1 rounded hover:bg-purple-50 dark:hover:bg-purple-950/30 disabled:opacity-50"
+                >
+                  <SkipForward className="size-3" />
+                  Skip
+                </button>
+                <button
+                  onClick={handleEndInterviewEarly}
+                  disabled={isLoading}
+                  aria-label="End interview early"
+                  className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300
+                             transition-colors inline-flex items-center gap-1
+                             px-2 py-1 rounded hover:bg-amber-50 dark:hover:bg-amber-950/30 disabled:opacity-50"
+                >
+                  <Flag className="size-3" />
+                  End Early
+                </button>
+              </>
+            )}
             {messages.length > 0 && (
               <button
                 onClick={doClear}
@@ -784,6 +1021,26 @@ export function SocraticChat({
               />
               {aiConnected ? 'Connected' : 'Connect AI in Settings'}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Interview Progress Bar */}
+      {mode === 'interview' && messages.length > 0 && (
+        <div className="px-4 py-2 bg-purple-50 dark:bg-purple-950/20 border-b border-purple-100 dark:border-purple-900">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+              Question {Math.min(interviewState.currentQuestion, interviewState.totalQuestions)} of {interviewState.totalQuestions}
+            </span>
+            <span className="text-xs text-purple-600 dark:text-purple-400">
+              Avg: {interviewState.scores.length > 0 ? (interviewState.scores.reduce((a, b) => a + b, 0) / interviewState.scores.length).toFixed(1) : '—'}/5
+            </span>
+          </div>
+          <div className="w-full h-2 bg-purple-200 dark:bg-purple-900 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-purple-500 to-purple-600 transition-all duration-500"
+              style={{ width: `${(interviewState.scores.length / interviewState.totalQuestions) * 100}%` }}
+            />
           </div>
         </div>
       )}
@@ -840,24 +1097,62 @@ export function SocraticChat({
               {msg.metadata && !msg.isStreaming && (
                 <div className="flex justify-start">
                   {mode === 'interview' && msg.metadata.score !== undefined && (
-                    <div className="ml-2 mt-1 px-3 py-2 rounded-lg bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 text-xs">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-purple-700 dark:text-purple-300">
-                          Score: {msg.metadata.score}/5
-                        </span>
+                    <div className="ml-2 mt-2 w-full max-w-[85%] space-y-2">
+                      {/* Score Badge */}
+                      <div
+                        className={cn(
+                          'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold',
+                          msg.metadata.score >= 4
+                            ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                            : msg.metadata.score >= 3
+                            ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300'
+                            : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                        )}
+                      >
+                        <Star className="size-4 fill-current" />
+                        {msg.metadata.score}/5
                       </div>
+
+                      {/* Feedback Card */}
                       {msg.metadata.feedback && (
-                        <div className="space-y-1 text-purple-900 dark:text-purple-100">
+                        <div className="rounded-lg border-2 border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/20 p-4 space-y-3">
                           {msg.metadata.feedback.strengths && (
-                            <div>
-                              <span className="font-medium">✓ Strengths: </span>
-                              {msg.metadata.feedback.strengths}
+                            <div className="flex gap-2">
+                              <span className="text-lg flex-shrink-0">💪</span>
+                              <div>
+                                <div className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide">
+                                  Strengths
+                                </div>
+                                <p className="text-sm text-foreground mt-0.5">
+                                  {msg.metadata.feedback.strengths}
+                                </p>
+                              </div>
                             </div>
                           )}
                           {msg.metadata.feedback.improvements && (
-                            <div>
-                              <span className="font-medium">⚡ Improvements: </span>
-                              {msg.metadata.feedback.improvements}
+                            <div className="flex gap-2">
+                              <span className="text-lg flex-shrink-0">🔍</span>
+                              <div>
+                                <div className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+                                  Areas to Improve
+                                </div>
+                                <p className="text-sm text-foreground mt-0.5">
+                                  {msg.metadata.feedback.improvements}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          {msg.metadata.feedback.followUp && (
+                            <div className="flex gap-2 pt-2 border-t border-purple-200 dark:border-purple-800">
+                              <span className="text-lg flex-shrink-0">➡️</span>
+                              <div>
+                                <div className="text-xs font-semibold text-purple-700 dark:text-purple-400 uppercase tracking-wide">
+                                  Next Question
+                                </div>
+                                <p className="text-sm text-foreground mt-0.5">
+                                  {msg.metadata.feedback.followUp}
+                                </p>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -895,6 +1190,125 @@ export function SocraticChat({
             </div>
           ))
         )}
+        
+        {/* Final Evaluation Card (Interview Mode) */}
+        {mode === 'interview' && interviewState.isComplete && interviewState.finalEvaluation && (
+          <div className="rounded-lg border-2 border-purple-300 dark:border-purple-700 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950/30 dark:to-purple-900/20 p-6 space-y-4 shadow-lg my-4">
+            <div className="flex items-center gap-3">
+              <Award className="size-6 text-purple-600 dark:text-purple-400" />
+              <h3 className="text-lg font-bold text-purple-900 dark:text-purple-100">
+                Interview Complete
+              </h3>
+            </div>
+            
+            {/* Overall Score */}
+            <div className="text-center py-4">
+              <div className="text-5xl font-bold text-purple-700 dark:text-purple-300">
+                {interviewState.finalEvaluation.overallScore}
+              </div>
+              <div className="text-sm text-purple-600 dark:text-purple-400 mt-1">
+                / 100
+              </div>
+            </div>
+            
+            {/* Hiring Recommendation Badge */}
+            <div className="flex justify-center">
+              <span
+                className={cn(
+                  'px-4 py-2 rounded-full text-sm font-bold',
+                  interviewState.finalEvaluation.hiringRecommendation === 'Strong Hire'
+                    ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                    : interviewState.finalEvaluation.hiringRecommendation === 'Hire'
+                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                    : interviewState.finalEvaluation.hiringRecommendation === 'Borderline'
+                    ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300'
+                    : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                )}
+              >
+                {interviewState.finalEvaluation.hiringRecommendation}
+              </span>
+            </div>
+            
+            {/* Justification */}
+            {interviewState.finalEvaluation.justification && (
+              <p className="text-sm text-foreground text-center italic">
+                {interviewState.finalEvaluation.justification}
+              </p>
+            )}
+            
+            {/* Strongest Areas */}
+            {interviewState.finalEvaluation.strongestAreas.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide mb-2">
+                  💪 Strongest Areas
+                </h4>
+                <ul className="space-y-1">
+                  {interviewState.finalEvaluation.strongestAreas.map((area, i) => (
+                    <li key={i} className="text-sm text-foreground flex items-start gap-2">
+                      <CheckCircle2 className="size-4 text-green-500 flex-shrink-0 mt-0.5" />
+                      {area}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {/* Areas for Improvement */}
+            {interviewState.finalEvaluation.areasForImprovement.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-2">
+                  🔍 Areas for Improvement
+                </h4>
+                <ul className="space-y-1">
+                  {interviewState.finalEvaluation.areasForImprovement.map((area, i) => (
+                    <li key={i} className="text-sm text-foreground flex items-start gap-2">
+                      <AlertCircle className="size-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                      {area}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {/* Recommended Topics */}
+            {interviewState.finalEvaluation.recommendedTopics.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-purple-700 dark:text-purple-400 uppercase tracking-wide mb-2">
+                  📚 Recommended Topics
+                </h4>
+                <ul className="space-y-1">
+                  {interviewState.finalEvaluation.recommendedTopics.map((topic, i) => (
+                    <li key={i} className="text-sm text-foreground flex items-start gap-2">
+                      <BookOpen className="size-4 text-purple-500 flex-shrink-0 mt-0.5" />
+                      {topic}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 pt-4 border-t border-purple-200 dark:border-purple-800">
+              <button
+                type="button"
+                onClick={handleDownloadEvaluation}
+                className="flex-1 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors inline-flex items-center justify-center gap-2"
+              >
+                <Download className="size-4" />
+                Download Report
+              </button>
+              <button
+                type="button"
+                onClick={doClear}
+                className="flex-1 px-4 py-2 rounded-lg border-2 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 text-sm font-medium hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-colors inline-flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="size-4" />
+                Retry Interview
+              </button>
+            </div>
+          </div>
+        )}
+        
         <div ref={chatEndRef} />
       </div>
 

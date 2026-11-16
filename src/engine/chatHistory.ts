@@ -19,10 +19,19 @@ export interface MessageMetadata {
     strengths?: string;
     improvements?: string;
     correct?: boolean;
+    followUp?: string;
   };
   // Challenge mode metadata
   correct?: boolean;
   explanation?: string;
+  // Final evaluation (interview mode)
+  overallScore?: number;
+  strongestAreas?: string[];
+  areasForImprovement?: string[];
+  recommendedTopics?: string[];
+  hiringRecommendation?: string;
+  justification?: string;
+  isFinalEvaluation?: boolean;
 }
 
 export interface StoredMessage {
