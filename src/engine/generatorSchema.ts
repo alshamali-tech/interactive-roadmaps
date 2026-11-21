@@ -150,17 +150,19 @@ export const DiagramSchema = z
   )
   .refine(
     (data) => {
-      // Must have at least one 'input' node (start node)
+      // For 'flow' type diagrams, must have at least one 'input' node (start node)
+      if (data.type !== 'flow') return true;
       return data.nodes.some((n) => n.type === 'input');
     },
-    { message: 'Diagram must have at least one start node (type: "input").' }
+    { message: 'Flow diagrams must have at least one start node (type: "input").' }
   )
   .refine(
     (data) => {
-      // Must have at least one 'output' node (end node)
+      // For 'flow' type diagrams, must have at least one 'output' node (end node)
+      if (data.type !== 'flow') return true;
       return data.nodes.some((n) => n.type === 'output');
     },
-    { message: 'Diagram must have at least one end node (type: "output").' }
+    { message: 'Flow diagrams must have at least one end node (type: "output").' }
   )
   .refine(
     (data) => {
@@ -258,6 +260,27 @@ export const WidgetConfigSchema = z.discriminatedUnion('type', [
       diagram: DiagramSchema,
     }),
   }),
+  z.object({
+    id: z.string(),
+    type: z.literal('socratic-chat'),
+    props: z.object({
+      /** Chat mode: 'tutor' (default), 'interview', or 'challenge' */
+      mode: z.enum(['tutor', 'interview', 'challenge']).default('tutor').describe('Chat mode: tutor (default), interview, or challenge'),
+      /** Topic for interview mode (required when mode='interview') */
+      topic: z.string().optional().describe('Topic for interview mode (required when mode="interview")'),
+      /** Difficulty level for interview/challenge modes */
+      difficulty: z.enum(['junior', 'mid', 'senior']).optional().default('mid').describe('Difficulty level for interview/challenge modes'),
+      /** Time limit in minutes for interview/challenge modes */
+      timeLimit: z.number().positive().optional().describe('Time limit in minutes for interview/challenge modes'),
+      /** Maximum questions for interview mode (default: 5) */
+      maxQuestions: z.number().positive().max(10).optional().default(5).describe('Maximum questions for interview mode (default: 5, max: 10)'),
+      /** Array of challenge questions for challenge mode */
+      challengeQuestions: z.array(z.object({
+        question: z.string().describe('The challenge question text'),
+        modelAnswer: z.string().describe('The expected correct answer'),
+      })).optional().describe('Array of challenge questions for challenge mode'),
+    }),
+  }),
 ]);
 
 export type WidgetConfig = z.infer<typeof WidgetConfigSchema>;
@@ -272,7 +295,7 @@ export const LessonPlanSchema = z.object({
   suggestedDifficulty: z.enum(['beginner', 'intermediate', 'advanced']).default('beginner'),
   keyPoints: z.array(z.string()).min(1).max(5),
   widgetSuggestions: z.array(z.object({
-    type: z.enum(['sandbox', 'mutator', 'trade-off', 'context-diagram']),
+    type: z.enum(['sandbox', 'mutator', 'trade-off', 'context-diagram', 'socratic-chat']),
     purpose: z.string(),
   })).default([]),
 });
@@ -490,6 +513,10 @@ Widget suggestion guidelines:
 - "mutator": Best for debugging practice and code comprehension — provide broken code that users must fix. Use for: common mistakes, anti-patterns, "spot the bug" exercises.
 - "trade-off": Best for architectural or design decisions — present competing approaches with measurable trade-offs. Use for: choosing between technologies, patterns, or strategies.
 - "context-diagram": Best for visualizing processes, flows, architectures, or relationships. Use for: system diagrams, flowcharts, sequences, component relationships.
+- "socratic-chat": An AI-powered chat widget with three modes:
+  - "tutor" (default): General help during lessons — guides the learner with Socratic questioning.
+  - "interview": Mock technical interviews — place at the end of a module to test comprehensive knowledge. Specify topic, difficulty (junior/mid/senior), and optional timeLimit.
+  - "challenge": Quick knowledge checks — place between lessons for rapid fire questions. Provide challengeQuestions array with question + modelAnswer pairs.
 - Suggest 1 widget per lesson that best reinforces the lesson's core concept.
 - The "purpose" field should describe a specific, actionable activity the learner can do.
 
@@ -657,11 +684,12 @@ CONTENT DEPTH REQUIREMENTS:
 STRUCTURE RULES:
 - Use {{widget:widget-id}} syntax in the markdown to embed widgets inline
 - Widget IDs MUST be prefixed with the lesson id (e.g., "${targetLesson.id}-widget-1")
-- Allowed widget types: "sandbox", "mutator", "trade-off", "context-diagram"
+- Allowed widget types: "sandbox", "mutator", "trade-off", "context-diagram", "socratic-chat"
 - Sandbox props: inputType ("text"|"code"), outputType ("text"|"html"), initialState (string), processFunction (optional JS string with a process(input) function)
 - Mutator props: language, brokenCode, hint, testCases (array of strings)
 - Trade-off props: scenario, options array (each: id, name, description, pros[], cons[], metrics{cost,performance,complexity,scalability})
 - Context-diagram props: diagram object (type, title, nodes[], edges[] — see DiagramSchema)
+- Socratic-chat props: mode ("tutor"|"interview"|"challenge"), topic (string, required for interview), difficulty ("junior"|"mid"|"senior"), timeLimit (minutes, optional), maxQuestions (number, for interview), challengeQuestions (array of {question, modelAnswer} for challenge mode)
 `;
 };
 
@@ -785,11 +813,33 @@ explanation: [why one might be better than the other]
 diagram: [a valid JSON object with type, title, nodes[], edges[] — see example below]
 :::
 
+:::widget socratic-chat
+mode: tutor
+:::
+
+:::widget socratic-chat
+mode: interview
+topic: [the interview subject, e.g., "JavaScript Fundamentals"]
+difficulty: mid
+timeLimit: 30
+maxQuestions: 5
+:::
+
+:::widget socratic-chat
+mode: challenge
+difficulty: mid
+challengeQuestion: What is the output of typeof null?
+challengeAnswer: "object"
+challengeQuestion: What does the spread operator (...) do?
+challengeAnswer: It expands an iterable into individual elements.
+:::
+
 Widget types and when to use them:
 - sandbox: For concepts that benefit from experimentation (algorithms, data transforms, syntax)
 - mutator: For debugging practice (broken code the user must fix)
 - trade-off: For comparing approaches (choosing technologies, patterns, strategies)
 - context-diagram: For visualizing processes, flows, architectures, or relationships. Use when a concept is best understood visually — e.g., request flows, component architectures, data pipelines, decision trees.
+- socratic-chat: AI-powered chat with three modes. Use "tutor" for general lesson help. Use "interview" at the end of a module to test comprehensive knowledge. Use "challenge" for quick knowledge checks between lessons.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXAMPLES

@@ -234,6 +234,49 @@ export interface TradeOffProps extends WidgetProps {
   explanation?: string;
 }
 
+/**
+ * A single challenge question for challenge mode.
+ */
+export interface ChallengeQuestionConfig {
+  /** The challenge question text */
+  question: string;
+  /** The expected correct answer */
+  modelAnswer: string;
+}
+
+/**
+ * Props for a socratic-chat widget — AI-powered chat with three modes.
+ *
+ * - tutor (default): General Socratic help during lessons
+ * - interview: Mock technical interviews with scored feedback
+ * - challenge: Quick knowledge checks with immediate pass/fail feedback
+ *
+ * @example
+ * ```ts
+ * {
+ *   mode: 'interview',
+ *   topic: 'JavaScript Fundamentals',
+ *   difficulty: 'mid',
+ *   timeLimit: 30,
+ *   maxQuestions: 5,
+ * }
+ * ```
+ */
+export interface SocraticChatProps extends WidgetProps {
+  /** Chat mode: 'tutor' (default), 'interview', or 'challenge' */
+  mode?: 'tutor' | 'interview' | 'challenge';
+  /** Topic for interview mode (required when mode='interview') */
+  topic?: string;
+  /** Difficulty level for interview/challenge modes */
+  difficulty?: 'junior' | 'mid' | 'senior';
+  /** Time limit in minutes for interview/challenge modes */
+  timeLimit?: number;
+  /** Maximum questions for interview mode (default: 5) */
+  maxQuestions?: number;
+  /** Array of challenge questions for challenge mode */
+  challengeQuestions?: ChallengeQuestionConfig[];
+}
+
 // ─── Widget Discriminated Union ─────────────────────────────────────────────
 
 export interface CodeEditorWidget {
@@ -302,6 +345,12 @@ export interface TcpIpHandshakeWidget {
   props: TcpIpHandshakeProps;
 }
 
+export interface SocraticChatWidget {
+  id: string;
+  type: 'socratic-chat';
+  props: SocraticChatProps;
+}
+
 /**
  * Discriminated union of all widget configurations.
  * Use `widget.type` to narrow the type at runtime.
@@ -317,7 +366,8 @@ export type WidgetConfig =
   | MutatorWidget
   | ContextDiagramWidget
   | TradeOffWidget
-  | TcpIpHandshakeWidget;
+  | TcpIpHandshakeWidget
+  | SocraticChatWidget;
 
 // ─── Lesson ─────────────────────────────────────────────────────────────────
 

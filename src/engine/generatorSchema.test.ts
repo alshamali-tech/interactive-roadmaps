@@ -636,8 +636,9 @@ describe('DiagramSchema (W1.2)', () => {
       nodes: [
         { id: 'req', label: 'User Request', type: 'input' as const, description: 'HTTP request from client' },
         { id: 'proc', label: 'Process', type: 'process' as const },
+        { id: 'resp', label: 'Response', type: 'output' as const },
       ],
-      edges: [{ from: 'req', to: 'proc' }],
+      edges: [{ from: 'req', to: 'proc' }, { from: 'proc', to: 'resp' }],
     };
     const result = DiagramSchema.safeParse(withDesc);
     expect(result.success).toBe(true);

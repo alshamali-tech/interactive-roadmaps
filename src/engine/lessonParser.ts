@@ -23,7 +23,7 @@ import { WidgetConfigSchema, DiagramSchema, type WidgetConfig, type Diagram } fr
 
 // Matches :::widget <type> ... ::: blocks (non-greedy)
 // \n? before closing ::: allows matching empty-body widgets like :::widget sandbox\n:::
-const WIDGET_BLOCK_RE = /:::widget\s+(sandbox|mutator|trade-off|trade_off|context-diagram|context_diagram)[ \t]*\n([\s\S]*?)\n?:::/gi;
+const WIDGET_BLOCK_RE = /:::widget\s+(sandbox|mutator|trade-off|trade_off|context-diagram|context_diagram|socratic-chat|socratic_chat)[ \t]*\n([\s\S]*?)\n?:::/gi;
 
 /**
  * Parse key: value pairs from a widget block body.
@@ -270,11 +270,52 @@ function normalizeContextDiagram(body: string, props: Record<string, string | st
   return validation.success ? validation.data : null;
 }
 
+function normalizeSocraticChat(props: Record<string, string | string[]>): WidgetConfig | null {
+  const modeStr = asString(props.mode, 'tutor').toLowerCase();
+  const mode = ['tutor', 'interview', 'challenge'].includes(modeStr)
+    ? (modeStr as 'tutor' | 'interview' | 'challenge')
+    : 'tutor';
+
+  const difficultyStr = asString(props.difficulty, 'mid').toLowerCase();
+  const difficulty = ['junior', 'mid', 'senior'].includes(difficultyStr)
+    ? (difficultyStr as 'junior' | 'mid' | 'senior')
+    : 'mid';
+
+  // Parse challenge questions from repeated challengeQuestion/challengeAnswer keys
+  const questions = asStringArray(props.challengeQuestion);
+  const answers = asStringArray(props.challengeAnswer);
+  const challengeQuestions = questions.length > 0
+    ? questions.map((q, i) => ({
+        question: q,
+        modelAnswer: answers[i] || '',
+      }))
+    : undefined;
+
+  const widget: WidgetConfig = {
+    id: '',
+    type: 'socratic-chat',
+    props: {
+      mode,
+      topic: asString(props.topic) || undefined,
+      difficulty,
+      timeLimit: props.timeLimit ? clampNumber(props.timeLimit, 1, 120, 5) : undefined,
+      maxQuestions: props.maxQuestions ? clampNumber(props.maxQuestions, 1, 10, 5) : 5,
+      challengeQuestions,
+    },
+  };
+
+  const validation = WidgetConfigSchema.safeParse(widget);
+  return validation.success ? validation.data : null;
+}
+
 function normalizeWidget(type: string, body: string, props: Record<string, string | string[]>): WidgetConfig | null {
   // Empty body = no props at all = clearly a mistake, skip it
   if (Object.keys(props).length === 0 && !body.trim().startsWith('{')) return null;
 
-  const normalizedType = type.toLowerCase().replace('trade_off', 'trade-off').replace('context_diagram', 'context-diagram');
+  const normalizedType = type.toLowerCase()
+    .replace('trade_off', 'trade-off')
+    .replace('context_diagram', 'context-diagram')
+    .replace('socratic_chat', 'socratic-chat');
 
   switch (normalizedType) {
     case 'sandbox':
@@ -285,6 +326,8 @@ function normalizeWidget(type: string, body: string, props: Record<string, strin
       return normalizeTradeOff(props);
     case 'context-diagram':
       return normalizeContextDiagram(body, props);
+    case 'socratic-chat':
+      return normalizeSocraticChat(props);
     default:
       return null;
   }

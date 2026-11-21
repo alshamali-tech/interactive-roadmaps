@@ -20,6 +20,7 @@ import { VideoWidget } from '@/components/widgets/VideoWidget';
 import { Mutator } from '@/components/universal/Mutator';
 import { ContextDiagram } from '@/components/universal/ContextDiagram';
 import { TradeOff } from '@/components/universal/TradeOff';
+import { SocraticChat } from '@/components/universal/SocraticChat';
 import { TcpIpHandshake } from '@/components/custom/TcpIpHandshake';
 
 // ─── Base Types ──────────────────────────────────────────────────────────────
@@ -204,4 +205,5 @@ widgetRegistry
   .register('mutator', Mutator)
   .register('context-diagram', ContextDiagram as unknown as WidgetComponent<WidgetProps>)
   .register('trade-off', TradeOff)
+  .register('socratic-chat', SocraticChat as unknown as WidgetComponent<WidgetProps>)
   .register('tcp-ip', TcpIpHandshake);
