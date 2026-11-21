@@ -100,6 +100,10 @@ export interface MutatorProps extends WidgetProps {
   hint: string;
   /** Optional title displayed in the widget header */
   title?: string;
+  /** Maximum number of hints available to the user (default: 1) */
+  maxHints?: number;
+  /** Callback invoked when the user clicks "Proceed to Next Lesson" after success */
+  onNextLesson?: () => void;
 }
 
 /**

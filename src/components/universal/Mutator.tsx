@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -8,8 +8,6 @@ import {
   Play,
   RotateCcw,
   Lightbulb,
-  ChevronDown,
-  ChevronRight,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -17,9 +15,12 @@ import {
   FlaskConical,
   Code2,
   FileWarning,
+  AlertTriangle,
+  ArrowRight,
+  MonitorSmartphone,
 } from 'lucide-react';
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface TestCaseResult {
   /** The raw test case string */
@@ -38,7 +39,7 @@ interface TestCaseResult {
 
 type RunState = 'idle' | 'running' | 'done';
 
-// â”€â”€â”€ Test Case Parser â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Test Case Parser ───────────────────────────────────────────────────────
 
 /**
  * Parses a test case string of the form:
@@ -79,7 +80,7 @@ function parseExpected(raw: string): unknown {
     return trimmed.slice(1, -1);
   }
 
-  // Arrays or objects â€” use Function to parse JSON-like
+  // Arrays or objects — use Function to parse JSON-like
   try {
     // eslint-disable-next-line no-new-func
     return new Function(`return (${trimmed})`)();
@@ -126,10 +127,10 @@ function formatValue(val: unknown): string {
   return String(val);
 }
 
-// â”€â”€â”€ Mutator Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Mutator Component ──────────────────────────────────────────────────────
 
 /**
- * The Mutator Widget â€” a code fixer challenge.
+ * The Mutator Widget — a code fixer challenge.
  *
  * Presents a broken code snippet in a Monaco editor with hidden deterministic tests.
  * The user must identify and fix the bug(s) to make all tests pass.
@@ -142,16 +143,45 @@ export function Mutator({
   testCases,
   hint,
   title = 'Fix the Bug',
+  maxHints = 1,
+  onNextLesson,
 }: MutatorProps) {
   const [code, setCode] = useState(brokenCode);
   const [results, setResults] = useState<TestCaseResult[] | null>(null);
   const [runState, setRunState] = useState<RunState>('idle');
   const [hintExpanded, setHintExpanded] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [hintsUsed, setHintsUsed] = useState(0);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const testTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Detect mobile and dark mode
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains('dark'));
+    };
+    checkDarkMode();
+
+    // Observe class changes on <html> for dark mode toggles
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      observer.disconnect();
+    };
+  }, []);
+
   const allPassed = useMemo(
-    () => results !== null && results.every((r) => r.passed),
+    () => results !== null && results.length > 0 && results.every((r) => r.passed),
     [results]
   );
 
@@ -159,6 +189,9 @@ export function Mutator({
     () => results?.filter((r) => r.passed).length ?? 0,
     [results]
   );
+
+  const hintsRemaining = maxHints - hintsUsed;
+  const canShowHint = failedAttempts >= 2 && hintsRemaining > 0 && !!hint;
 
   const handleEditorMount: OnMount = useCallback((editor) => {
     editorRef.current = editor;
@@ -225,6 +258,11 @@ export function Mutator({
         });
       }
 
+      const allPass = testResults.every(r => r.passed);
+      if (!allPass) {
+        setFailedAttempts(prev => prev + 1);
+      }
+
       setResults(testResults);
       setRunState('done');
       testTimeoutRef.current = null;
@@ -242,7 +280,25 @@ export function Mutator({
     }
     setResults(null);
     setRunState('idle');
+    setFailedAttempts(0);
+    setHintsUsed(0);
+    setHintExpanded(false);
   }, [brokenCode]);
+
+  const handleResetRequest = () => setShowResetConfirm(true);
+  const handleResetCancel = () => setShowResetConfirm(false);
+  const handleResetConfirm = () => {
+    resetCode();
+    setShowResetConfirm(false);
+  };
+
+  const handleHintClick = () => {
+    if (!canShowHint) return;
+    setHintsUsed(prev => prev + 1);
+    setHintExpanded(true);
+    // Track hint usage for analytics (could be expanded with a callback)
+    console.log(`[Mutator] Hint used. Hints remaining: ${hintsRemaining - 1}`);
+  };
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -258,7 +314,7 @@ export function Mutator({
   }, []);
 
   return (
-    <div className="my-6 rounded-xl border border-border overflow-hidden bg-card shadow-sm">
+    <div className="my-6 rounded-xl border border-border overflow-hidden bg-card shadow-sm relative">
       {/* Header */}
       <div className="flex items-center gap-3 bg-gradient-to-r from-rose-50 to-amber-50 dark:from-rose-950/30 dark:to-amber-950/20 px-5 py-3 border-b border-border">
         <div className="flex items-center gap-2">
@@ -289,9 +345,58 @@ export function Mutator({
         )}
       </div>
 
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-20 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-card border border-border rounded-xl shadow-lg p-6 max-w-sm w-full space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="size-6 text-amber-500" />
+              <h4 className="text-lg font-semibold">Reset Code?</h4>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This will erase all your changes and restore the original broken code. Are you sure?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={handleResetCancel}>Cancel</Button>
+              <Button variant="destructive" size="sm" onClick={handleResetConfirm}>Yes, Reset</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Overlay */}
+      {allPassed && (
+        <div className="absolute inset-0 bg-background/95 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+          <div className="animate-bounce mb-4">
+            <div className="size-20 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+              <CheckCircle2 className="size-12 text-green-500" />
+            </div>
+          </div>
+          <h3 className="text-2xl font-bold text-foreground mb-2 flex items-center gap-2">
+            <Sparkles className="size-6 text-amber-500" />
+            Lesson Complete!
+            <Sparkles className="size-6 text-amber-500" />
+          </h3>
+          <p className="text-muted-foreground mb-6 max-w-sm">
+            Great debugging work! You've successfully identified and fixed the issue.
+            {hintsUsed > 0 && (
+              <span className="block text-xs mt-1 text-amber-600 dark:text-amber-400">
+                (Hints used: {hintsUsed})
+              </span>
+            )}
+          </p>
+          {onNextLesson && (
+            <Button onClick={onNextLesson} size="lg" className="gap-2">
+              Proceed to Next Lesson
+              <ArrowRight className="size-4" />
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Split-screen: Editor + Test Panel */}
       <div className="flex flex-col lg:flex-row">
-        {/* Left: Monaco Editor */}
+        {/* Left: Editor */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 px-4 py-2 bg-[#1e1e2e] border-b border-[#313244]">
             <Code2 className="size-3.5 text-[#cba6f7]" />
@@ -302,31 +407,51 @@ export function Mutator({
               {language}
             </span>
           </div>
-          <div className="bg-[#1e1e2e]">
-            <Editor
-              height="320px"
-              language={language}
-              theme="vs-dark"
-              value={code}
-              onChange={handleCodeChange}
-              onMount={handleEditorMount}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 13,
-                fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-                lineNumbers: 'on',
-                scrollBeyondLastLine: false,
-                wordWrap: 'on',
-                tabSize: 2,
-                padding: { top: 12, bottom: 12 },
-                renderLineHighlight: 'line',
-                bracketPairColorization: { enabled: true },
-                smoothScrolling: true,
-                cursorBlinking: 'smooth',
-                cursorSmoothCaretAnimation: 'on',
-              }}
-            />
-          </div>
+          
+          {isMobile ? (
+            <div className="p-4 space-y-3 bg-card">
+              <div className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
+                <MonitorSmartphone className="size-3" />
+                Original Broken Code (Reference):
+              </div>
+              <pre className="bg-muted p-3 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap border border-border">
+                {brokenCode}
+              </pre>
+              <div className="text-xs font-semibold text-muted-foreground mb-1">Your Fix:</div>
+              <textarea
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="w-full h-48 p-3 rounded-lg border border-border bg-background font-mono text-sm resize-y focus:outline-none focus:ring-2 focus:ring-primary"
+                spellCheck={false}
+              />
+            </div>
+          ) : (
+            <div className="min-h-[200px] max-h-[400px] h-[300px]">
+              <Editor
+                height="100%"
+                language={language}
+                theme={isDarkMode ? 'vs-dark' : 'light'}
+                value={code}
+                onChange={handleCodeChange}
+                onMount={handleEditorMount}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  wordWrap: 'on',
+                  tabSize: 2,
+                  padding: { top: 12, bottom: 12 },
+                  renderLineHighlight: 'line',
+                  bracketPairColorization: { enabled: true },
+                  smoothScrolling: true,
+                  cursorBlinking: 'smooth',
+                  cursorSmoothCaretAnimation: 'on',
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right: Test Panel */}
@@ -416,7 +541,7 @@ export function Mutator({
                         </div>
                         {result.error && (
                           <div className="text-red-500 dark:text-red-400 mt-1">
-                            âš  {result.error}
+                            ⚠ {result.error}
                           </div>
                         )}
                       </div>
@@ -432,8 +557,8 @@ export function Mutator({
             <Button
               onClick={runTests}
               disabled={runState === 'running'}
-              className="w-full"
-              size="sm"
+              className={cn("w-full", isMobile && "h-12 text-base")}
+              size={isMobile ? "lg" : "sm"}
             >
               {runState === 'running' ? (
                 <>
@@ -455,7 +580,7 @@ export function Mutator({
 
             <div className="flex gap-2">
               <Button
-                onClick={resetCode}
+                onClick={handleResetRequest}
                 variant="outline"
                 size="sm"
                 className="flex-1"
@@ -468,55 +593,44 @@ export function Mutator({
         </div>
       </div>
 
-      {/* All passed celebration */}
-      {allPassed && (
-        <div className="bg-green-50 dark:bg-green-950/30 border-t border-green-200 dark:border-green-800 px-5 py-4 flex items-center gap-3">
-          <Sparkles className="size-6 text-green-500 shrink-0" />
-          <div>
-            <p className="text-sm font-bold text-green-700 dark:text-green-400">
-              ðŸŽ‰ All tests passed! Bug squashed!
-            </p>
-            <p className="text-xs text-green-600 dark:text-green-500/80">
-              Great debugging work. You&apos;ve successfully identified and fixed the issue.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Hint Section */}
       {hint && (
-        <div className="border-t border-border">
+        <div className="border-t border-border p-3 bg-muted/20">
           <button
-            onClick={() => setHintExpanded(!hintExpanded)}
-            className="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-muted/30 transition-colors"
+            onClick={handleHintClick}
+            disabled={!canShowHint}
+            className={cn(
+              "w-full flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+              canShowHint
+                ? "bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-950/40 border border-amber-200 dark:border-amber-800"
+                : "bg-muted text-muted-foreground cursor-not-allowed opacity-60"
+            )}
           >
-            <Lightbulb
-              className={cn(
-                'size-4 shrink-0 transition-colors',
-                hintExpanded
-                  ? 'text-amber-500'
-                  : 'text-muted-foreground'
-              )}
-            />
-            <span className="text-sm font-medium text-foreground">
-              {hintExpanded ? 'Hide Hint' : 'Need a Hint?'}
-            </span>
-            {hintExpanded ? (
-              <ChevronDown className="size-4 ml-auto text-muted-foreground" />
-            ) : (
-              <ChevronRight className="size-4 ml-auto text-muted-foreground" />
+            <Lightbulb className="size-4" />
+            {hintExpanded ? 'Hide Hint' : `Show Hint`}
+            {hintsRemaining > 0 && !hintExpanded && (
+              <span className="ml-auto text-xs bg-amber-200 dark:bg-amber-900/50 px-2 py-0.5 rounded-full">
+                {hintsRemaining} left
+              </span>
             )}
           </button>
           {hintExpanded && (
-            <div className="px-5 pb-4 -mt-1">
-              <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-lg p-4 text-sm text-amber-900 dark:text-amber-200 leading-relaxed">
-                ðŸ’¡ {hint}
-              </div>
+            <div className="mt-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-lg p-4 text-sm text-amber-900 dark:text-amber-200 leading-relaxed animate-in slide-in-from-top-2 duration-200">
+              💡 {hint}
             </div>
+          )}
+          {!canShowHint && !hintExpanded && failedAttempts < 2 && (
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Hint unlocks after {2 - failedAttempts} more failed test run{2 - failedAttempts > 1 ? 's' : ''}.
+            </p>
+          )}
+          {!canShowHint && !hintExpanded && failedAttempts >= 2 && hintsRemaining <= 0 && (
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              No hints remaining.
+            </p>
           )}
         </div>
       )}
     </div>
   );
 }
-
