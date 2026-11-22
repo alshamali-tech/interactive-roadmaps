@@ -219,7 +219,8 @@ export interface TradeOffOption {
  *
  * Presents a real-world scenario and a set of clickable option cards.
  * Upon selection the widget reveals pros/cons, a metrics comparison
- * table, and a recharts RadarChart overlay.
+ * table, scenario-based consequence cards, "what if" stress scenarios,
+ * and an optional AI-graded written justification.
  *
  * @example
  * ```ts
@@ -238,8 +239,15 @@ export interface TradeOffProps extends WidgetProps {
   scenario: string;
   /** Array of choices (minimum 2, maximum 5 — extras are truncated) */
   options: TradeOffOption[];
-  /** Optional explanation shown below the chart after selection */
+  /** Optional explanation shown below the consequences after selection */
   explanation?: string;
+  /**
+   * When true, the user must write a justification of at least 2 sentences
+   * before the consequences are revealed. The justification is sent to the
+   * AI for feedback when a provider is connected (offline fallback otherwise).
+   * Default: false.
+   */
+  requireJustification?: boolean;
 }
 
 /**

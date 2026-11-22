@@ -253,6 +253,7 @@ export const WidgetConfigSchema = z.discriminatedUnion('type', [
         }),
       })).min(2).max(4),
       explanation: z.string().optional(),
+      requireJustification: z.boolean().optional(),
     }),
   }),
   z.object({

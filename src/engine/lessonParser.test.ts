@@ -102,6 +102,31 @@ Outro.`;
     }
   });
 
+  it('parses requireJustification for trade-off widgets', () => {
+    const raw = `Intro.
+
+:::widget trade-off
+scenario: Choose a cache
+requireJustification: true
+optionA_name: Redis
+optionA_pro: Fast
+optionA_con: Costly
+optionB_name: Memcached
+optionB_pro: Simple
+optionB_con: No persistence
+:::
+
+Outro.`;
+
+    const result = parseFocusedLesson(raw, 'lesson-rj');
+    expect(result.widgets).toHaveLength(1);
+    const w = result.widgets[0];
+    expect(w.type).toBe('trade-off');
+    if (w.type === 'trade-off') {
+      expect(w.props.requireJustification).toBe(true);
+    }
+  });
+
   // ─── Multiple widgets ─────────────────────────────────────────
 
   it('parses multiple widgets with sequential IDs', () => {

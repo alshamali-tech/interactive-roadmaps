@@ -215,6 +215,8 @@ function normalizeTradeOff(props: Record<string, string | string[]>): WidgetConf
       scenario: asString(props.scenario, 'Choose the best approach'),
       options: options.slice(0, 4),
       explanation: asString(props.explanation) || undefined,
+      requireJustification:
+        asString(props.requireJustification).toLowerCase() === 'true' ? true : undefined,
     },
   };
 
