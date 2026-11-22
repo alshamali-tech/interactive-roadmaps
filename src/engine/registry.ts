@@ -1,7 +1,7 @@
 /**
  * Widget Registry — Central mapping from string type identifiers to React components.
  *
- * The curriculum schema references widgets by string type (e.g., 'code-editor', 'quiz').
+ * The curriculum schema references widgets by string type (e.g., 'sandbox', 'mutator').
  * This registry resolves those strings to actual React components at render time.
  *
  * New widget types can be registered dynamically via `widgetRegistry.register()`.
@@ -10,18 +10,11 @@
 
 import type { ComponentType } from 'react';
 import type { WidgetConfig } from '@/curriculum/schema';
-import { CodeEditorWidget } from '@/components/widgets/CodeEditorWidget';
-import { QuizWidget } from '@/components/widgets/QuizWidget';
 import { Sandbox } from '@/components/universal/Sandbox';
-import { DiagramWidget } from '@/components/widgets/DiagramWidget';
-import { NoteWidget } from '@/components/widgets/NoteWidget';
-import { CalloutWidget } from '@/components/widgets/CalloutWidget';
-import { VideoWidget } from '@/components/widgets/VideoWidget';
 import { Mutator } from '@/components/universal/Mutator';
 import { ContextDiagram } from '@/components/universal/ContextDiagram';
 import { TradeOff } from '@/components/universal/TradeOff';
 import { SocraticChat } from '@/components/universal/SocraticChat';
-import { TcpIpHandshake } from '@/components/custom/TcpIpHandshake';
 
 // ─── Base Types ──────────────────────────────────────────────────────────────
 
@@ -53,15 +46,15 @@ export type WidgetComponent<P extends WidgetProps = any> = ComponentType<P>;
  *
  * ## How it works
  *
- * 1. Each widget in the curriculum schema has a `type` field (e.g., `'code-editor'`, `'quiz'`).
+ * 1. Each widget in the curriculum schema has a `type` field (e.g., `'sandbox'`, `'mutator'`).
  * 2. Components are registered against those type strings via `register()`.
  * 3. At render time, `resolve()` or `get()` retrieves the correct component.
  *
  * ## Registering a new widget type
  *
  * ```ts
- * import { MySandboxWidget } from '@/components/widgets/MySandboxWidget';
- * widgetRegistry.register('sandbox', MySandboxWidget);
+ * import { MyWidget } from '@/components/widgets/MyWidget';
+ * widgetRegistry.register('my-widget', MyWidget);
  * ```
  *
  * ## Rendering a widget
@@ -89,9 +82,9 @@ class WidgetRegistry {
    * @example
    * ```ts
    * widgetRegistry
-   *   .register('code-editor', CodeEditorWidget)
-   *   .register('quiz', QuizWidget)
-   *   .register('sandbox', SandboxWidget);
+   *   .register('sandbox', Sandbox)
+   *   .register('mutator', Mutator)
+   *   .register('trade-off', TradeOff);
    * ```
    */
   register<P extends WidgetProps>(
@@ -192,18 +185,135 @@ export const widgetRegistry = new WidgetRegistry();
 
 // ─── Built-in Widget Registration ────────────────────────────────────────────
 
+/**
+ * Register built-in widget components with comprehensive documentation.
+ * 
+ * Each widget serves a specific pedagogical purpose in the curriculum system.
+ * Use the selection guide below to choose the appropriate widget for your lesson.
+ */
+
 // Register built-in widget components against their schema type strings.
 // New widget types can be added here or registered externally via `widgetRegistry.register()`.
 widgetRegistry
-  .register('code-editor', CodeEditorWidget)
-  .register('quiz', QuizWidget)
+  /**
+   * **Sandbox Widget** (`sandbox`)
+   * 
+   * Interactive code execution environment for hands-on learning.
+   * 
+   * **What it does:** Provides a split-pane interface with input (text or code) and output display.
+   * Supports real-time token counting, multiple input/output types (text, JSON, HTML), and custom processing functions.
+   * 
+   * **When to use:** 
+   * - Teaching concepts that benefit from experimentation (e.g., token counting, data transformation)
+   * - Demonstrating cause-and-effect relationships
+   * - Allowing learners to test hypotheses in real-time
+   * 
+   * **Required props:**
+   * - `inputType`: 'text' | 'code' | 'json'
+   * - `outputType`: 'text' | 'json' | 'html'
+   * - `processFunction`: JavaScript function string that transforms input to output
+   * 
+   * **Optional props:**
+   * - `initialState`: Default input value
+   * - `label`: Widget title
+   * - `placeholder`: Input placeholder text
+   * - `tokenLimit`: Maximum token count with visual progress bar
+   * - `widgetId`: Unique ID for localStorage persistence
+   */
   .register('sandbox', Sandbox)
-  .register('diagram', DiagramWidget)
-  .register('note', NoteWidget)
-  .register('callout', CalloutWidget)
-  .register('video', VideoWidget)
+  
+  /**
+   * **Mutator Widget** (`mutator`)
+   * 
+   * Code debugging challenge widget for problem-solving practice.
+   * 
+   * **What it does:** Presents broken code in a Monaco editor with hidden test cases.
+   * Learners must identify and fix bugs to make all tests pass.
+   * 
+   * **When to use:**
+   * - Teaching debugging skills
+   * - Reinforcing code comprehension through repair exercises
+   * - Assessing understanding of specific programming concepts
+   * 
+   * **Required props:**
+   * - `language`: Programming language (e.g., 'javascript', 'typescript')
+   * - `brokenCode`: The buggy code snippet to fix
+   * - `testCases`: Array of test strings in format "functionCall(args) => expected"
+   * - `hint`: Help text shown in collapsible section
+   * 
+   * **Optional props:**
+   * - `title`: Challenge title
+   * - `difficulty`: 'easy' | 'medium' | 'hard'
+   */
   .register('mutator', Mutator)
+  
+  /**
+   * **Context Diagram Widget** (`context-diagram`)
+   * 
+   * System architecture visualization using Mermaid diagrams.
+   * 
+   * **What it does:** Renders flowcharts, sequence diagrams, and other Mermaid-supported diagram types.
+   * Supports interactive zoom, pan, and theme switching.
+   * 
+   * **When to use:**
+   * - Visualizing system architecture and component relationships
+   * - Teaching design patterns and data flow
+   * - Explaining protocols and communication sequences
+   * 
+   * **Required props:**
+   * - `diagramType`: 'flowchart' | 'sequence' | 'class' | 'er' | 'custom'
+   * - `source`: Mermaid diagram source code
+   * 
+   * **Optional props:**
+   * - `caption`: Diagram caption/description
+   * - `title`: Diagram title
+   * - `theme`: 'default' | 'dark' | 'forest' | 'neutral'
+   */
   .register('context-diagram', ContextDiagram as unknown as WidgetComponent<WidgetProps>)
+  
+  /**
+   * **Trade-Off Widget** (`trade-off`)
+   * 
+   * Decision-making exercise for evaluating architectural choices.
+   * 
+   * **What it does:** Presents multiple options with trade-offs across dimensions like cost, performance,
+   * complexity, and scalability. Learners select an option and see consequences with real-world scenarios.
+   * 
+   * **When to use:**
+   * - Teaching systems thinking and architectural decision-making
+   * - Exploring trade-offs in technology selection
+   * - Developing critical evaluation skills
+   * 
+   * **Required props:**
+   * - `options`: Array of option objects with `id`, `label`, `description`, and metric scores (1-10)
+   * 
+   * **Optional props:**
+   * - `requireJustification`: Boolean to require written justification before showing consequences
+   * - `title`: Exercise title
+   * - `explanation`: Context or background information
+   */
   .register('trade-off', TradeOff)
-  .register('socratic-chat', SocraticChat as unknown as WidgetComponent<WidgetProps>)
-  .register('tcp-ip', TcpIpHandshake);
+  
+  /**
+   * **Socratic Chat Widget** (`socratic-chat`)
+   * 
+   * AI-powered Socratic dialogue for guided discovery learning.
+   * 
+   * **What it does:** Presents a problem or concept, then engages learners in a Socratic dialogue
+   * where the AI asks probing questions to guide them toward understanding rather than providing answers.
+   * 
+   * **When to use:**
+   * - Teaching complex concepts through guided discovery
+   * - Developing critical thinking and problem-solving skills
+   * - Encouraging metacognition and self-reflection
+   * 
+   * **Required props:**
+   * - `problemStatement`: The problem or concept to explore
+   * 
+   * **Optional props:**
+   * - `persona`: AI tutor persona (e.g., 'encouraging', 'challenging', 'curious')
+   * - `challengeLevel`: 'beginner' | 'intermediate' | 'advanced'
+   * - `interviewMode`: Boolean to enable structured interview format
+   * - `maxTurns`: Maximum conversation turns before conclusion
+   */
+  .register('socratic-chat', SocraticChat as unknown as WidgetComponent<WidgetProps>);

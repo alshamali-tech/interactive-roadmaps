@@ -86,29 +86,14 @@ Context window usage (4K model):
 
 Before data can be sent over a network, the client and server must establish a connection. This is called the 3-way handshake (SYN, SYN-ACK, ACK).
 
-Let's visualize this process:
-
-{{widget:tcp-visualizer}}
+<!-- TODO: Replace with context-diagram widget when TCP/IP visualization is ready -->
+<!-- {{widget:tcp-visualizer}} -->
 
 As an AI Engineer, you need to understand this because network latency during this handshake can severely impact the **Time-to-First-Token (TTFT)** in your RAG pipelines. Every external API call to an LLM provider (OpenAI, Anthropic, etc.) goes through this handshake before any data flows.
 
 ### Key Takeaway
 When you see high TTFT numbers in your AI application, the TCP handshake is often the hidden culprit — especially for users far from the provider's data centers.`,
-      widgets: [
-        {
-          id: 'tcp-visualizer',
-          type: 'tcp-ip',
-          props: {
-            clientIp: '192.168.1.10',
-            serverIp: '10.0.0.5',
-            sequence: [
-              { step: '1. SYN', from: 'client', label: 'Seq=100' },
-              { step: '2. SYN-ACK', from: 'server', label: 'Seq=300, Ack=101' },
-              { step: '3. ACK', from: 'client', label: 'Ack=301' },
-            ],
-          },
-        },
-      ],
+      widgets: [],
     },
   },
 ];

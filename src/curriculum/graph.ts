@@ -27,8 +27,6 @@ Programming is one of the most valuable skills in the modern world. Whether you 
 build websites, develop mobile apps, analyze data, or automate tasks, programming gives
 you the power to create and innovate.
 
-{{widget:callout-welcome}}
-
 ## How Programs Work
 
 At its core, every program follows three basic steps:
@@ -38,8 +36,6 @@ At its core, every program follows three basic steps:
 3. **Output** — display or store the results
 
 This simple model underpins everything from simple scripts to complex distributed systems.
-
-{{widget:quiz-basics}}
 
 ## Try It Yourself: Input → Process → Output
 
@@ -53,30 +49,6 @@ Now try a code-style sandbox — type JavaScript and see it evaluated as text ou
 {{widget:sandbox-code}}
 `,
     widgets: [
-      {
-        id: 'callout-welcome',
-        type: 'callout',
-        props: {
-          emoji: '👋',
-          title: 'Welcome!',
-          body: "This is your first lesson. Take your time and don't rush — programming is a marathon, not a sprint.",
-        },
-      },
-      {
-        id: 'quiz-basics',
-        type: 'quiz',
-        props: {
-          question: 'What are the three basic steps every program follows?',
-          options: [
-            { id: 'a', text: 'Compile, Run, Debug', isCorrect: false },
-            { id: 'b', text: 'Input, Process, Output', isCorrect: true },
-            { id: 'c', text: 'Read, Write, Execute', isCorrect: false },
-            { id: 'd', text: 'Design, Build, Test', isCorrect: false },
-          ],
-          explanation:
-            'Every program receives input, processes it according to your code, and produces output.',
-        },
-      },
       {
         id: 'sandbox-echo',
         type: 'sandbox',
@@ -152,8 +124,6 @@ let name = "Alice";     // can be reassigned
 const age = 30;         // cannot be reassigned
 \`\`\`
 
-{{widget:note-types}}
-
 ## Common Data Types
 
 | Type | Example | Description |
@@ -164,8 +134,6 @@ const age = 30;         // cannot be reassigned
 | Null | \`null\` | Intentional absence of value |
 | Undefined | \`undefined\` | Uninitialized variable |
 
-{{widget:code-variables}}
-
 ## Type Coercion
 
 JavaScript is dynamically typed, which means variables can hold different types at
@@ -175,8 +143,6 @@ different times. This can lead to surprising behavior:
 "5" + 3   // "53" (string concatenation)
 "5" - 3   // 2   (numeric subtraction)
 \`\`\`
-
-{{widget:quiz-types}}
 
 ## Experiment: Type Coercion Sandbox
 
@@ -193,42 +159,6 @@ Can you spot the bug in this function? The developer meant to create a
 {{widget:mutator-calculator}}
 `,
     widgets: [
-      {
-        id: 'note-types',
-        type: 'note',
-        props: {
-          variant: 'tip',
-          title: 'Pro Tip',
-          body: 'Prefer `const` by default and only use `let` when you know the value will change. Avoid `var` in modern code.',
-        },
-      },
-      {
-        id: 'code-variables',
-        type: 'code-editor',
-        props: {
-          language: 'javascript',
-          initialCode: '// Try declaring a variable for your name and age\nlet myName = "";\nlet myAge = 0;\n\nconsole.log(`My name is ${myName} and I am ${myAge} years old.`);',
-          solution: 'let myName = "Alice";\nlet myAge = 30;\n\nconsole.log(`My name is ${myName} and I am ${myAge} years old.`);',
-          testCases: [
-            { input: '', expected: 'My name is Alice and I am 30 years old.' },
-          ],
-        },
-      },
-      {
-        id: 'quiz-types',
-        type: 'quiz',
-        props: {
-          question: 'What is the result of `"5" + 3` in JavaScript?',
-          options: [
-            { id: 'a', text: '8', isCorrect: false },
-            { id: 'b', text: '"53"', isCorrect: true },
-            { id: 'c', text: 'NaN', isCorrect: false },
-            { id: 'd', text: 'TypeError', isCorrect: false },
-          ],
-          explanation:
-            'The `+` operator with a string triggers string concatenation. The number 3 is coerced to the string "3".',
-        },
-      },
       {
         id: 'sandbox-coercion',
         type: 'sandbox',
@@ -304,8 +234,6 @@ if (temperature > 30) {
 }
 \`\`\`
 
-{{widget:diagram-flowchart}}
-
 ## Loops
 
 Loops let you repeat code until a condition is met:
@@ -324,11 +252,7 @@ while (count < 3) {
 }
 \`\`\`
 
-{{widget:code-loops}}
-
 ## Common Pitfalls
-
-{{widget:note-infinite}}
 
 Always make sure your loop condition will eventually become false, or you'll create an
 **infinite loop** that crashes your program!
@@ -364,36 +288,6 @@ solution do you choose?
 {{widget:tradeoff-cache}}
 `,
     widgets: [
-      {
-        id: 'diagram-flowchart',
-        type: 'diagram',
-        props: {
-          diagramType: 'flowchart',
-          source: 'Start --> Check Temperature --> {> 30?} -->|Yes| Print Hot --> End\nCheck Temperature --> {> 15?} -->|Yes| Print Nice --> End\nCheck Temperature --> Print Cold --> End',
-          caption: 'Decision flow for temperature-based output',
-        },
-      },
-      {
-        id: 'code-loops',
-        type: 'code-editor',
-        props: {
-          language: 'javascript',
-          initialCode: '// Write a loop that prints numbers 1 through 5\n\n\n// Expected output:\n// 1\n// 2\n// 3\n// 4\n// 5',
-          solution: 'for (let i = 1; i <= 5; i++) {\n  console.log(i);\n}',
-          testCases: [
-            { input: '', expected: '1\n2\n3\n4\n5' },
-          ],
-        },
-      },
-      {
-        id: 'note-infinite',
-        type: 'note',
-        props: {
-          variant: 'danger',
-          title: 'Warning: Infinite Loops',
-          body: 'If your loop condition never becomes false, your program will freeze or crash. Always double-check that your loop will terminate!',
-        },
-      },
       {
         id: 'mutator-even',
         type: 'mutator',

@@ -3,7 +3,7 @@ import { widgetRegistry } from './registry';
 
 describe('Widget Registry', () => {
   it('registry contains all required widget types', () => {
-    const requiredTypes = ['sandbox', 'mutator', 'context-diagram', 'diagram', 'quiz', 'note', 'callout', 'video', 'code-editor'];
+    const requiredTypes = ['sandbox', 'mutator', 'trade-off', 'context-diagram', 'socratic-chat'];
     requiredTypes.forEach(type => {
       expect(widgetRegistry.has(type)).toBe(true);
     });
@@ -24,6 +24,6 @@ describe('Widget Registry', () => {
   });
 
   it('registry size matches expected count', () => {
-    expect(widgetRegistry.size).toBeGreaterThanOrEqual(9);
+    expect(widgetRegistry.size).toBe(5);
   });
 });

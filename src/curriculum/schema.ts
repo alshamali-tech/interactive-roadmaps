@@ -11,64 +11,8 @@
  */
 
 import type { WidgetProps } from '@/engine/registry';
-import type { TcpIpHandshakeProps } from '@/components/custom/TcpIpHandshake';
 
 // ─── Widget System ──────────────────────────────────────────────────────────
-
-/**
- * Props for a code-editor widget (interactive sandbox).
- */
-export interface CodeEditorProps extends WidgetProps {
-  language: string;
-  initialCode: string;
-  solution?: string;
-  testCases?: { input: string; expected: string }[];
-}
-
-/**
- * Props for a quiz widget (multiple choice).
- */
-export interface QuizProps extends WidgetProps {
-  question: string;
-  options: { id: string; text: string; isCorrect: boolean }[];
-  explanation?: string;
-}
-
-/**
- * Props for a diagram widget (Mermaid-like rendering).
- */
-export interface DiagramProps extends WidgetProps {
-  diagramType: 'flowchart' | 'sequence' | 'class' | 'er' | 'custom';
-  source: string;
-  caption?: string;
-}
-
-/**
- * Props for an embedded video widget.
- */
-export interface VideoProps extends WidgetProps {
-  url: string;
-  title?: string;
-  autoplay?: boolean;
-}
-
-/**
- * Props for a styled note/callout widget.
- */
-export interface NoteProps extends WidgetProps {
-  variant: 'info' | 'warning' | 'tip' | 'danger';
-  title?: string;
-  body: string;
-}
-
-/**
- * Props for a callout widget with optional emoji.
- */
-export interface CalloutProps extends WidgetProps {
-  emoji?: string;
-  title?: string;
-  body: string;
-}
 
 /**
  * Props for a mutator widget — the code fixer challenge widget.
@@ -295,42 +239,6 @@ export interface SocraticChatProps extends WidgetProps {
 
 // ─── Widget Discriminated Union ─────────────────────────────────────────────
 
-export interface CodeEditorWidget {
-  id: string;
-  type: 'code-editor';
-  props: CodeEditorProps;
-}
-
-export interface QuizWidget {
-  id: string;
-  type: 'quiz';
-  props: QuizProps;
-}
-
-export interface DiagramWidget {
-  id: string;
-  type: 'diagram';
-  props: DiagramProps;
-}
-
-export interface VideoWidget {
-  id: string;
-  type: 'video';
-  props: VideoProps;
-}
-
-export interface NoteWidget {
-  id: string;
-  type: 'note';
-  props: NoteProps;
-}
-
-export interface CalloutWidget {
-  id: string;
-  type: 'callout';
-  props: CalloutProps;
-}
-
 export interface SandboxWidget {
   id: string;
   type: 'sandbox';
@@ -355,12 +263,6 @@ export interface TradeOffWidget {
   props: TradeOffProps;
 }
 
-export interface TcpIpHandshakeWidget {
-  id: string;
-  type: 'tcp-ip';
-  props: TcpIpHandshakeProps;
-}
-
 export interface SocraticChatWidget {
   id: string;
   type: 'socratic-chat';
@@ -372,17 +274,10 @@ export interface SocraticChatWidget {
  * Use `widget.type` to narrow the type at runtime.
  */
 export type WidgetConfig =
-  | CodeEditorWidget
-  | QuizWidget
-  | DiagramWidget
-  | VideoWidget
-  | NoteWidget
-  | CalloutWidget
   | SandboxWidget
   | MutatorWidget
   | ContextDiagramWidget
   | TradeOffWidget
-  | TcpIpHandshakeWidget
   | SocraticChatWidget;
 
 // ─── Lesson ─────────────────────────────────────────────────────────────────
