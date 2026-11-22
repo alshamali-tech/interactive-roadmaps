@@ -108,16 +108,24 @@ function tryParseJson(text: string): unknown | null {
 }
 
 function normalizeSandbox(props: Record<string, string | string[]>): WidgetConfig | null {
+  const inputTypeStr = asString(props.inputType).toLowerCase();
+  const inputType = inputTypeStr === 'code' ? 'code' : 'text';
+
+  const outputTypeStr = asString(props.outputType).toLowerCase();
+  const outputType = outputTypeStr === 'html' ? 'html' : outputTypeStr === 'json' ? 'json' : 'text';
+
   const widget: WidgetConfig = {
     id: '',
     type: 'sandbox',
     props: {
-      inputType: asString(props.inputType) === 'code' ? 'code' : 'text',
-      outputType: asString(props.outputType) === 'html' ? 'html' : 'text',
+      inputType,
+      outputType,
       initialState: asString(props.initialState, 'Try it...'),
       processFunction: asString(props.processFunction) || undefined,
       label: asString(props.label) || undefined,
       placeholder: asString(props.placeholder) || undefined,
+      tokenLimit: props.tokenLimit ? clampNumber(props.tokenLimit, 1, 100000, 0) || undefined : undefined,
+      widgetId: asString(props.widgetId) || undefined,
     },
   };
 

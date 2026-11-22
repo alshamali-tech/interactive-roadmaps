@@ -214,11 +214,13 @@ export const WidgetConfigSchema = z.discriminatedUnion('type', [
     type: z.literal('sandbox'),
     props: z.object({
       inputType: z.enum(['text', 'code']),
-      outputType: z.enum(['text', 'html']),
+      outputType: z.enum(['text', 'html', 'json']),
       initialState: z.string(),
       processFunction: z.string().optional(),
       label: z.string().optional(),
       placeholder: z.string().optional(),
+      tokenLimit: z.number().positive().optional(),
+      widgetId: z.string().optional(),
     }),
   }),
   z.object({

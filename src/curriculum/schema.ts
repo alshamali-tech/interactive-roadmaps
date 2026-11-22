@@ -164,8 +164,8 @@ export interface ContextDiagramProps extends WidgetProps {
 export interface SandboxProps extends WidgetProps {
   /** Whether the input pane is a plain textarea or a code editor */
   inputType: 'text' | 'code';
-  /** Whether the output pane renders text or HTML */
-  outputType: 'text' | 'html';
+  /** Whether the output pane renders text, HTML, or JSON */
+  outputType: 'text' | 'html' | 'json';
   /** Initial content of the input pane */
   initialState: string;
   /**
@@ -177,6 +177,10 @@ export interface SandboxProps extends WidgetProps {
   label?: string;
   /** Placeholder text for the input pane */
   placeholder?: string;
+  /** Optional token limit. If set, shows a progress bar that turns red when exceeded */
+  tokenLimit?: number;
+  /** Unique widget ID for localStorage persistence */
+  widgetId?: string;
 }
 
 /**

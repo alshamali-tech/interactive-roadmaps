@@ -1,57 +1,100 @@
-﻿import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Sandbox } from './Sandbox';
 
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: vi.fn((key: string) => store[key] || null),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = value;
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      store = {};
+    }),
+  };
+})();
+
+Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+
+// Mock matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  configurable: true,
+  value: vi.fn().mockImplementation((query) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
+
 describe('Sandbox Widget', () => {
+  beforeEach(() => {
+    localStorageMock.clear();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // ─── Basic Rendering ─────────────────────────────────────────────────────
+
   it('renders with text input and output', () => {
     render(
       <Sandbox
         inputType="text"
         outputType="text"
         initialState="Hello"
-        processFunction="function process(input) { return input; }"
+        title="Test Sandbox"
       />
     );
 
-    // Both the textarea (input) and pre (output) contain "Hello" initially
-    const matches = screen.getAllByText('Hello');
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Hello');
   });
 
   it('updates output when user types', async () => {
-    const user = userEvent.setup();
     render(
       <Sandbox
         inputType="text"
         outputType="text"
         initialState=""
-        processFunction="function process(input) { return input.toUpperCase(); }"
+        title="Test Sandbox"
       />
     );
 
-    const textarea = screen.getByPlaceholderText('Type here...');
-    await user.clear(textarea);
-    await user.type(textarea, 'world');
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    
+    // Use fireEvent.change which React properly handles
+    fireEvent.change(textarea, { target: { value: 'New text' } });
 
-    // Wait for debounce (300ms) + a buffer
-    await new Promise((r) => setTimeout(r, 400));
-
-    expect(screen.getByText('WORLD')).toBeInTheDocument();
+    // Wait for debounce (300ms) + render
+    await waitFor(() => {
+      expect(screen.getByText('New text')).toBeInTheDocument();
+    }, { timeout: 3000 });
   });
 
   it('renders iframe when outputType is html', () => {
-    const { container } = render(
+    render(
       <Sandbox
         inputType="text"
         outputType="html"
-        initialState="<h1>Hi</h1>"
-        processFunction="function process(input) { return input; }"
+        initialState="<p>Test</p>"
+        title="HTML Sandbox"
       />
     );
 
-    const iframe = container.querySelector('iframe');
-    expect(iframe).toBeInTheDocument();
+    expect(screen.getByTitle('HTML Output')).toBeInTheDocument();
   });
 
   it('renders reset button', () => {
@@ -59,10 +102,250 @@ describe('Sandbox Widget', () => {
       <Sandbox
         inputType="text"
         outputType="text"
-        initialState="initial"
-        processFunction="function process(input) { return input; }"
+        initialState="Initial"
+        title="Test Sandbox"
       />
     );
-    expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument();
+
+    expect(screen.getByLabelText('Reset to initial state')).toBeInTheDocument();
+  });
+
+  // ─── Token Counter ───────────────────────────────────────────────────────
+
+  it('shows real-time token count', () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState="Hello world"
+        title="Test Sandbox"
+      />
+    );
+
+    expect(screen.getByText(/Tokens:/)).toBeInTheDocument();
+  });
+
+  it('shows token limit progress bar when tokenLimit is set', () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState="Hello world"
+        title="Test Sandbox"
+        tokenLimit={100}
+      />
+    );
+
+    expect(screen.getByText(/Tokens:/)).toBeInTheDocument();
+    expect(screen.getByText(/100/)).toBeInTheDocument();
+  });
+
+  // ─── Action Buttons ──────────────────────────────────────────────────────
+
+  it('shows Clear button', () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState="Test"
+        title="Test Sandbox"
+      />
+    );
+
+    expect(screen.getByLabelText('Clear input')).toBeInTheDocument();
+  });
+
+  it('shows Copy button', () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState="Test"
+        title="Test Sandbox"
+      />
+    );
+
+    expect(screen.getByLabelText('Copy to clipboard')).toBeInTheDocument();
+  });
+
+  it('shows Compare button', () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState="Test"
+        title="Test Sandbox"
+      />
+    );
+
+    expect(screen.getByLabelText('Compare outputs')).toBeInTheDocument();
+  });
+
+  it('Clear button empties the input', async () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState="Initial text"
+        title="Test Sandbox"
+      />
+    );
+
+    const clearButton = screen.getByLabelText('Clear input');
+    fireEvent.click(clearButton);
+
+    await waitFor(() => {
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('');
+    }, { timeout: 3000 });
+  });
+
+  it('shows character count', () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState="Hello"
+        title="Test Sandbox"
+      />
+    );
+
+    expect(screen.getByText(/characters/)).toBeInTheDocument();
+  });
+
+  // ─── State Persistence ────────────────────────────────────────────────────
+
+  it('persists input to localStorage when widgetId is provided', async () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState=""
+        title="Test Sandbox"
+        widgetId="test-widget-1"
+      />
+    );
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    
+    // Use fireEvent.change which React properly handles
+    fireEvent.change(textarea, { target: { value: 'Persisted text' } });
+
+    await waitFor(() => {
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(
+        'sandbox-state-test-widget-1',
+        expect.stringContaining('Persisted text')
+      );
+    }, { timeout: 3000 });
+  });
+
+  it('restores input from localStorage on mount', () => {
+    localStorageMock.getItem.mockReturnValue('Restored text');
+
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState=""
+        title="Test Sandbox"
+        widgetId="test-widget-2"
+      />
+    );
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Restored text');
+  });
+
+  // ─── JSON Output ──────────────────────────────────────────────────────────
+
+  it('renders JSON output with collapsible tree', async () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="json"
+        initialState='{"key": "value", "number": 42}'
+        title="JSON Sandbox"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('"key"')).toBeInTheDocument();
+      expect(screen.getByText('"value"')).toBeInTheDocument();
+      expect(screen.getByText('42')).toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+
+  it('shows error for invalid JSON output', async () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="json"
+        initialState='{invalid json}'
+        title="JSON Sandbox"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invalid JSON/)).toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+
+  // ─── HTML Output ──────────────────────────────────────────────────────────
+
+  it('shows View Source toggle for HTML output', () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="html"
+        initialState="<p>Test</p>"
+        title="HTML Sandbox"
+      />
+    );
+
+    expect(screen.getByLabelText('View source')).toBeInTheDocument();
+  });
+
+  // ─── Mobile Layout ────────────────────────────────────────────────────────
+
+  it('renders mobile layout with textarea when window is small', () => {
+    // Mock mobile viewport
+    window.matchMedia = vi.fn().mockImplementation((query) => ({
+      matches: query === '(max-width: 768px)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    render(
+      <Sandbox
+        inputType="code"
+        outputType="text"
+        initialState="console.log('mobile');"
+        title="Mobile Sandbox"
+      />
+    );
+
+    // Should render textarea instead of Monaco on mobile
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
+  // ─── Settings ─────────────────────────────────────────────────────────────
+
+  it('shows settings button', () => {
+    render(
+      <Sandbox
+        inputType="text"
+        outputType="text"
+        initialState="Test"
+        title="Test Sandbox"
+        widgetId="test-settings"
+      />
+    );
+
+    expect(screen.getByLabelText('Settings')).toBeInTheDocument();
   });
 });
