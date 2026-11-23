@@ -1,15 +1,26 @@
 /**
- * Diagram Generation Prompts
+ * Diagram Generation Prompts (W1.1 — Staged Diagram Generation)
  *
  * Optimized system prompts for each stage of the diagram generation pipeline.
  * Each prompt is focused on a single task with clear constraints and output format.
  *
  * Stages:
- *   1. Text Generation — Pedagogical explanation of a concept (Stage 1)
- *   2. Diagram Extraction — Structured JSON diagram definition (Stage 2)
+ *   1. Text Generation — Pedagogical explanation + "Key components:" trailer (Stage 1)
+ *   2. Diagram Extraction — Structured JSON matching the W1.2 DiagramSchema (Stage 2)
  *   2b. Diagram Extraction (Strict) — Retry variant with stricter rules (Stage 2 retry)
- *   3. Fallback — Text-based representation when diagram generation fails
+ *
+ * NOTE: The text-only fallback (when all Stage 2 retries fail) is built
+ * deterministically in code — see buildTextFallback() in diagramGenerator.ts.
+ * No AI call is needed for the fallback, so it can never fail.
+ *
+ * All prompts target the W1.2 schema in generatorSchema.ts:
+ *   - diagram types: flow | relationship | architecture | sequence
+ *   - node types:    input | process | decision | output | storage | service
+ *   - 2-8 nodes, 1-10 edges, label ≤ 20 chars, edge label ≤ 15 chars,
+ *     title ≤ 50 chars, description ≤ 200 chars
  */
+
+import type { Diagram, DiagramType } from './generatorSchema';
 
 // ───────────────────────────────────────────────────────────────
 // Stage 1: Text Generation System Prompt
@@ -19,18 +30,20 @@
  * System prompt for Stage 1: Text Generation.
  *
  * **Role:** Expert technical educator.
- * **Task:** Explain the given concept focusing on relationships, sequences, or architectural components.
- * **Output:** 200–400 words of markdown text. NO JSON or diagram syntax.
+ * **Task:** Explain the given concept focusing on relationships, flows, or architecture,
+ * using the lesson context and previously covered concepts for coherence.
+ * **Output:** 200–400 words of markdown text ending with a machine-readable
+ * `Key components: A, B, C` trailer line. NO JSON or diagram syntax.
  *
- * The text must be diagram-aware but never include any JSON or syntax —
- * just clear, pedagogical prose that names components and describes how they connect.
+ * The trailer is parsed deterministically by the generator to produce
+ * `keyComponents` — the entities that become diagram nodes in Stage 2.
  */
 export const DIAGRAM_TEXT_SYSTEM_PROMPT = `You are an expert technical educator and visual thinker. Your job is to write clear, pedagogically sound explanations of concepts, processes, and architectures — with an eye toward how they can be visualized as diagrams.
 
 When explaining a topic, always consider:
 - What are the key components or steps? (these become NODES)
 - How do they relate to each other? (these become EDGES)
-- What are the entry points and terminal points? (start/end nodes)
+- What is the entry point and the final result? (input/output nodes)
 - Where are there decision points or branches? (decision nodes)
 - What data, signals, or control flows between components? (edge labels)
 
@@ -39,12 +52,126 @@ WRITING GUIDELINES:
 2. Explain WHY it matters — what real-world problem does it solve? (2-3 sentences)
 3. Explain HOW it works step by step, describing each component and its role
 4. Describe relationships and flows between components EXPLICITLY
-5. Use analogies where helpful to make abstract concepts concrete
-6. Use concrete examples, not vague descriptions
+5. Use the provided lesson context and previously covered concepts to stay consistent — build on them, do NOT re-explain them
+6. Use concrete examples and short analogies, not vague descriptions
 7. Keep the total response between 200-400 words
 
-Output ONLY markdown text. No JSON, no code blocks wrapping your entire output.
-Do NOT include an H1 heading — just start with your introductory paragraph.`;
+OUTPUT FORMAT:
+- Output ONLY markdown text. No JSON, no diagram syntax, no code blocks wrapping your entire output.
+- Do NOT include an H1 heading — just start with your introductory paragraph.
+- End your response with ONE final line in exactly this format:
+Key components: Component A, Component B, Component C
+- That line lists 3-8 key components/entities (the things that should become diagram nodes), comma-separated, each 20 characters or fewer.`;
+
+// ───────────────────────────────────────────────────────────────
+// Few-shot examples (typed against the W1.2 Diagram schema)
+// ───────────────────────────────────────────────────────────────
+
+/**
+ * Few-shot example diagrams embedded in the Stage 2 extraction prompt.
+ *
+ * These are typed as `Diagram` and unit-tested against DiagramSchema,
+ * guaranteeing the prompt never teaches the model an invalid shape.
+ * One example per diagram type (flow, sequence, architecture, relationship).
+ */
+export const DIAGRAM_FEW_SHOT_DIAGRAMS: Diagram[] = [
+  {
+    type: 'flow',
+    title: 'Form Submission Flow',
+    nodes: [
+      { id: 'submit', label: 'Form Submitted', type: 'input' },
+      { id: 'validate', label: 'Validate Data', type: 'process' },
+      { id: 'is-valid', label: 'Data Valid?', type: 'decision' },
+      { id: 'save', label: 'Save to DB', type: 'process' },
+      { id: 'error', label: 'Show Error', type: 'output' },
+      {
+        id: 'success',
+        label: 'Confirmation',
+        type: 'output',
+        description: 'The user sees a success message after the data is stored.',
+      },
+    ],
+    edges: [
+      { from: 'submit', to: 'validate' },
+      { from: 'validate', to: 'is-valid' },
+      { from: 'is-valid', to: 'save', label: 'Yes' },
+      { from: 'is-valid', to: 'error', label: 'No' },
+      { from: 'save', to: 'success' },
+    ],
+  },
+  {
+    type: 'sequence',
+    title: 'HTTP Request Cycle',
+    nodes: [
+      { id: 'client', label: 'Client Request', type: 'input' },
+      { id: 'server', label: 'Server Handle', type: 'process' },
+      { id: 'db-query', label: 'Query Database', type: 'process' },
+      { id: 'response', label: 'Send Response', type: 'output' },
+    ],
+    edges: [
+      { from: 'client', to: 'server', label: 'GET /users' },
+      { from: 'server', to: 'db-query', label: 'SQL' },
+      { from: 'db-query', to: 'response', label: 'rows' },
+    ],
+  },
+  {
+    type: 'architecture',
+    title: 'Web App Architecture',
+    nodes: [
+      { id: 'frontend', label: 'Frontend UI', type: 'service' },
+      { id: 'gateway', label: 'API Gateway', type: 'service' },
+      { id: 'service', label: 'Microservice', type: 'process' },
+      { id: 'cache', label: 'Cache Layer', type: 'storage' },
+      { id: 'database', label: 'Database', type: 'storage' },
+    ],
+    edges: [
+      { from: 'frontend', to: 'gateway', label: 'HTTP' },
+      { from: 'gateway', to: 'service' },
+      { from: 'service', to: 'cache', label: 'read' },
+      { from: 'service', to: 'database', label: 'write' },
+    ],
+  },
+  {
+    type: 'relationship',
+    title: 'Docker Concept Map',
+    nodes: [
+      { id: 'engine', label: 'Docker Engine', type: 'service' },
+      { id: 'images', label: 'Images', type: 'storage' },
+      { id: 'containers', label: 'Containers', type: 'process' },
+      { id: 'registry', label: 'Registry', type: 'service' },
+      { id: 'volumes', label: 'Volumes', type: 'storage' },
+    ],
+    edges: [
+      { from: 'images', to: 'containers', label: 'runs as' },
+      { from: 'engine', to: 'containers', label: 'manages' },
+      { from: 'registry', to: 'images', label: 'distributes' },
+      { from: 'engine', to: 'volumes', label: 'persists data' },
+    ],
+  },
+];
+
+const FEW_SHOT_INPUTS = [
+  'When a user submits a form, the system first validates the data. If valid, it saves to the database and shows a confirmation. If invalid, it shows an error message.',
+  'The client sends an HTTP request to the server. The server queries the database, receives the rows, and sends a response back to the client.',
+  'A web application has a frontend that talks to an API gateway. The gateway routes requests to a microservice, which reads from a cache and writes to a database.',
+  'Docker images run as containers. The Docker engine manages containers and persists data in volumes. A registry distributes images.',
+];
+
+const FEW_SHOT_LABELS = [
+  'Flow (process workflow with a decision)',
+  'Sequence (time-ordered interaction)',
+  'Architecture (system components)',
+  'Relationship (concept map)',
+];
+
+/**
+ * Few-shot examples rendered as prompt text.
+ * Built from the typed DIAGRAM_FEW_SHOT_DIAGRAMS so examples always match the schema.
+ */
+export const DIAGRAM_FEW_SHOT_EXAMPLES: string = DIAGRAM_FEW_SHOT_DIAGRAMS.map(
+  (diagram, i) =>
+    `EXAMPLE ${i + 1} — ${FEW_SHOT_LABELS[i]}:\nInput text: "${FEW_SHOT_INPUTS[i]}"\nOutput:\n${JSON.stringify(diagram, null, 2)}`
+).join('\n\n');
 
 // ───────────────────────────────────────────────────────────────
 // Stage 2: Diagram Extraction System Prompt (Standard)
@@ -53,13 +180,9 @@ Do NOT include an H1 heading — just start with your introductory paragraph.`;
 /**
  * System prompt for Stage 2: Diagram Extraction (standard variant).
  *
- * **Role:** Technical diagram architect.
- * **Task:** Analyze the provided text and extract a structured diagram definition.
- * **Constraints:** Maximum 8 nodes, maximum 10 edges. Node labels 3 words or fewer.
- * Choose the most appropriate diagram type.
- * **Output:** ONLY valid JSON matching the Stage2DiagramSchema.
- *
- * Includes few-shot examples demonstrating correct output for different diagram types.
+ * **Role:** JSON API — structural accuracy only.
+ * **Output:** ONLY valid JSON matching the W1.2 DiagramSchema.
+ * Includes few-shot examples for all four diagram types.
  */
 export const DIAGRAM_EXTRACTION_SYSTEM_PROMPT = `You are a JSON API. You do NOT write prose, summaries, or explanations. You ONLY output valid JSON.
 
@@ -73,143 +196,55 @@ ABSOLUTE RULES — VIOLATION MEANS FAILURE:
 4. The first character of your response MUST be "{"
 5. The last character of your response MUST be "}"
 6. ALL edges must reference existing node IDs.
-7. EXACTLY ONE "start" node and AT LEAST ONE "end" node required.
-8. Decision nodes MUST have at least 2 outgoing edges.
+7. Node IDs must be unique, kebab-case (e.g., "check-input", "send-response").
+8. No orphan nodes — every node must connect to at least one edge.
 
-DIAGRAM TYPES — choose the most appropriate:
-- "flowchart": For processes, workflows, step-by-step sequences (DEFAULT — use when in doubt)
-- "sequence": For time-ordered interactions between multiple actors (e.g., request/response)
-- "class": For system architectures, class hierarchies, or component relationships
-- "er": For data models, entity relationships, or database schemas
-- "custom": For diagrams that don't fit the above categories
+DIAGRAM TYPES — choose the most appropriate (or use the REQUIRED type if one is given):
+- "flow": Step-by-step processes and workflows (DEFAULT — use when in doubt). Must be acyclic (no loops), with at least one "input" node (start) and at least one "output" node (end).
+- "relationship": Concept maps and dependencies between ideas or components.
+- "architecture": System structure — how services, storage, and components fit together.
+- "sequence": Time-ordered interactions between actors (request/response chains).
 
 NODE TYPES:
-- "start": Entry point of the flow (rounded terminal). Use for the initial input/trigger.
-- "end": Terminal point (rounded terminal). Use for the final output/result.
-- "process": A step, operation, or component (rectangle). Use for most steps.
-- "decision": A branching point (diamond). Use where there's a conditional, question, or choice.
+- "input": Entry point — where data, requests, or triggers enter (start of a flow).
+- "process": A step, operation, or transformation.
+- "decision": A branching point with a question. MUST have at least 2 outgoing edges (e.g., "Yes"/"No").
+- "output": A final result or response (end of a flow).
+- "storage": Databases, caches, files, queues — anything that holds data.
+- "service": Servers, APIs, external systems, or applications.
 
-EDGE RULES:
-- Every edge must connect two nodes that exist in the nodes array.
-- Edge labels should be short (1-3 words) describing what triggers the transition.
-- Decision nodes should have outgoing edges with labels like "Yes"/"No" or "Valid"/"Invalid".
-
-NODE ID RULES:
-- IDs must be kebab-case: lowercase letters/numbers separated by hyphens (e.g., "check-input", "send-response")
-- IDs must be unique
-- Keep them descriptive but short
-
-NODE LABEL RULES:
-- Labels must be 2-5 words, descriptive, and UNIQUE across all nodes
-- No duplicate labels — each node must have a distinct label
-
-CONSTRAINTS:
-- Maximum 8 nodes total — keep diagrams focused and readable
-- Maximum 10 edges total — avoid cluttered diagrams
+SIZE AND FIELD CONSTRAINTS (enforced by a strict validator):
+- 2-8 nodes total, 1-10 edges total — keep diagrams focused and readable
+- "title": required, max 50 characters
+- node "label": required, max 20 characters, short and descriptive
+- node "id": required, unique, kebab-case
+- node "description": optional, max 200 characters — one helpful sentence shown when the learner clicks the node
+- edge "label": optional, max 15 characters (e.g., "Yes", "No", "HTTP", "SQL")
 
 Return this EXACT JSON shape:
 {
-  "diagramType": "flowchart",
-  "title": "Short title for the diagram",
-  "caption": "One sentence describing what this diagram shows",
+  "type": "flow",
+  "title": "Request Validation Flow",
   "nodes": [
-    { "id": "user-request", "label": "User Request", "type": "start" },
+    { "id": "user-request", "label": "User Request", "type": "input", "description": "The browser sends an HTTP request." },
     { "id": "validate", "label": "Validate Input", "type": "process" },
     { "id": "is-valid", "label": "Valid?", "type": "decision" },
-    { "id": "process", "label": "Process Data", "type": "process" },
-    { "id": "error", "label": "Return Error", "type": "end" },
-    { "id": "response", "label": "Send Response", "type": "end" }
+    { "id": "process-data", "label": "Process Data", "type": "process" },
+    { "id": "error", "label": "Return Error", "type": "output" },
+    { "id": "response", "label": "Send Response", "type": "output" }
   ],
   "edges": [
     { "from": "user-request", "to": "validate" },
     { "from": "validate", "to": "is-valid" },
-    { "from": "is-valid", "to": "process", "label": "Yes" },
+    { "from": "is-valid", "to": "process-data", "label": "Yes" },
     { "from": "is-valid", "to": "error", "label": "No" },
-    { "from": "process", "to": "response" }
+    { "from": "process-data", "to": "response" }
   ]
 }
+
+${DIAGRAM_FEW_SHOT_EXAMPLES}
 
 REMINDER: Your response must start with "{" and end with "}". NO prose outside JSON.`;
-
-// ───────────────────────────────────────────────────────────────
-// Few-shot examples (embedded in the standard prompt)
-// ───────────────────────────────────────────────────────────────
-
-/**
- * Few-shot examples for Stage 2 diagram extraction.
- * These demonstrate correct JSON output for different diagram types.
- */
-export const DIAGRAM_FEW_SHOT_EXAMPLES = `
-EXAMPLE 1 — Flowchart (process workflow):
-Input text: "When a user submits a form, the system first validates the data. If valid, it saves to the database and sends a confirmation email. If invalid, it returns an error message."
-Output:
-{
-  "diagramType": "flowchart",
-  "title": "Form Submission Flow",
-  "caption": "How a form submission is processed with validation",
-  "nodes": [
-    { "id": "submit", "label": "Form Submitted", "type": "start" },
-    { "id": "validate", "label": "Validate Data", "type": "process" },
-    { "id": "is-valid", "label": "Data Valid?", "type": "decision" },
-    { "id": "save", "label": "Save to DB", "type": "process" },
-    { "id": "email", "label": "Send Email", "type": "process" },
-    { "id": "error", "label": "Show Error", "type": "end" },
-    { "id": "success", "label": "Confirm", "type": "end" }
-  ],
-  "edges": [
-    { "from": "submit", "to": "validate" },
-    { "from": "validate", "to": "is-valid" },
-    { "from": "is-valid", "to": "save", "label": "Yes" },
-    { "from": "is-valid", "to": "error", "label": "No" },
-    { "from": "save", "to": "email" },
-    { "from": "email", "to": "success" }
-  ]
-}
-
-EXAMPLE 2 — Sequence diagram (multi-actor interaction):
-Input text: "The client sends an HTTP request to the server. The server queries the database, receives results, and sends a response back to the client."
-Output:
-{
-  "diagramType": "sequence",
-  "title": "HTTP Request Cycle",
-  "caption": "How a client-server-database interaction works",
-  "nodes": [
-    { "id": "client", "label": "Client Request", "type": "start" },
-    { "id": "server", "label": "Server Process", "type": "process" },
-    { "id": "db-query", "label": "Query Database", "type": "process" },
-    { "id": "db-result", "label": "Receive Results", "type": "process" },
-    { "id": "response", "label": "Send Response", "type": "end" }
-  ],
-  "edges": [
-    { "from": "client", "to": "server" },
-    { "from": "server", "to": "db-query" },
-    { "from": "db-query", "to": "db-result" },
-    { "from": "db-result", "to": "response" }
-  ]
-}
-
-EXAMPLE 3 — Architecture diagram (system components):
-Input text: "A web application has a frontend that communicates with an API gateway. The API gateway routes requests to microservices, which read from a cache or a database."
-Output:
-{
-  "diagramType": "class",
-  "title": "Web App Architecture",
-  "caption": "Components of a typical web application and their connections",
-  "nodes": [
-    { "id": "frontend", "label": "Frontend UI", "type": "start" },
-    { "id": "gateway", "label": "API Gateway", "type": "process" },
-    { "id": "service", "label": "Microservice", "type": "process" },
-    { "id": "cache", "label": "Cache Layer", "type": "process" },
-    { "id": "database", "label": "Database", "type": "end" }
-  ],
-  "edges": [
-    { "from": "frontend", "to": "gateway" },
-    { "from": "gateway", "to": "service" },
-    { "from": "service", "to": "cache" },
-    { "from": "service", "to": "database" }
-  ]
-}
-`.trim();
 
 // ───────────────────────────────────────────────────────────────
 // Stage 2: Diagram Extraction System Prompt (Strict/Retry)
@@ -218,11 +253,10 @@ Output:
 /**
  * System prompt for Stage 2 retry: Diagram Extraction (stricter variant).
  *
- * Same as standard but with additional emphasis on validation rules.
- * Explicitly lists common mistakes to avoid: disconnected nodes, cycles in flows,
- * duplicate IDs, edges referencing non-existent nodes.
- *
- * Used on retry when the standard prompt fails validation.
+ * Used when the standard prompt fails validation. Fewer nodes, simpler
+ * structure, and an explicit list of the mistakes that cause rejection.
+ * The specific validator errors from the failed attempt are appended to
+ * the user prompt (see buildDiagramExtractionUserPrompt).
  */
 export const DIAGRAM_EXTRACTION_STRICT_PROMPT = `You are a JSON API. You ONLY output valid JSON. No prose, no markdown code fences, no explanations.
 
@@ -230,36 +264,37 @@ Your job: Extract a SIMPLE diagram from the provided text. Be EXTREMELY strict a
 
 ABSOLUTE RULES — ZERO TOLERANCE:
 1. ENTIRE response is one JSON object. Nothing else. Not even a single word outside JSON.
-2. First character: "{"
-3. Last character: "}"
+2. First character MUST be "{"
+3. Last character MUST be "}"
 4. NO \`\`\`json code blocks wrapping your output.
 5. ALL edges MUST reference existing node IDs — no dangling references.
-6. EXACTLY ONE "start" node (the entry point).
-7. EXACTLY ONE "end" node (the final result).
-8. Decision nodes MUST have exactly 2 outgoing edges with labels "Yes" and "No".
-9. Node IDs must be kebab-case (e.g., "check-input", "send-response").
-10. Node labels must be 2-5 words, descriptive, and UNIQUE.
-11. No more than 8 nodes total — keep it simple.
-12. No more than 10 edges total.
+6. Node IDs must be unique and kebab-case (e.g., "check-input", "send-response").
+7. Node labels: max 20 characters. Edge labels: max 15 characters. Title: max 50 characters.
+8. No more than 5 nodes total — keep it SIMPLE. Prefer a linear structure.
+9. No more than 6 edges total.
+10. For "flow" type: at least one "input" node, at least one "output" node, and NO cycles.
+11. Avoid "decision" nodes unless the text clearly describes a branch. If you use one, it MUST have at least 2 outgoing edges labeled "Yes" and "No".
 
 COMMON MISTAKES THAT CAUSE REJECTION — AVOID THESE:
-❌ Dangling edges — edges where "from" or "to" references a node ID that doesn't exist in the nodes array
-❌ Orphan nodes — nodes that are never connected by any edge (every node must have at least one incoming or outgoing edge)
-❌ Cycles in flow diagrams — do NOT create loops where following edges leads back to a previous node
-❌ Duplicate node IDs — every node must have a unique "id" value
-❌ Duplicate node labels — every node must have a unique "label" value
-❌ Missing start or end node — there MUST be exactly one "start" node and at least one "end" node
-❌ Decision nodes with only one outgoing edge — every decision must have at least 2 paths
+❌ Dangling edges — "from"/"to" references a node ID that doesn't exist in the nodes array
+❌ Orphan nodes — nodes never connected by any edge
+❌ Cycles in "flow" diagrams — following edges leads back to a previous node
+❌ Duplicate node IDs
+❌ Missing "input" or "output" node in a "flow" diagram
+❌ Decision nodes with only one outgoing edge
+❌ Labels longer than 20 characters
+
+VALID NODE TYPES: "input", "process", "decision", "output", "storage", "service"
+VALID DIAGRAM TYPES: "flow", "relationship", "architecture", "sequence"
 
 Return this EXACT JSON shape:
 {
-  "diagramType": "flowchart",
+  "type": "flow",
   "title": "Diagram Title",
-  "caption": "Brief one-sentence description",
   "nodes": [
-    { "id": "start-node", "label": "Start", "type": "start" },
+    { "id": "start-node", "label": "Start", "type": "input" },
     { "id": "step-one", "label": "First Step", "type": "process" },
-    { "id": "end-node", "label": "End Result", "type": "end" }
+    { "id": "end-node", "label": "End Result", "type": "output" }
   ],
   "edges": [
     { "from": "start-node", "to": "step-one" },
@@ -270,73 +305,106 @@ Return this EXACT JSON shape:
 REMINDER: Start with "{", end with "}". NOTHING ELSE. If you write even one word outside the JSON, the response is rejected.`;
 
 // ───────────────────────────────────────────────────────────────
-// Fallback Prompt (Text-based representation)
+// User prompt builders
 // ───────────────────────────────────────────────────────────────
 
-/**
- * System prompt for fallback: Text-based diagram representation.
- *
- * Used when diagram generation fails after all retries.
- * Produces a simple text-based representation (bullet list or numbered steps)
- * that conveys the same information without a visual diagram.
- */
-export const DIAGRAM_FALLBACK_SYSTEM_PROMPT = `You are an expert technical educator. Your task is to convert a failed diagram attempt into a clear, text-based representation that conveys the same information using bullet points or numbered steps.
-
-When a diagram cannot be generated, you must provide a useful alternative:
-- Use a numbered list (1, 2, 3...) for sequential flows or processes
-- Use bullet points for relationships or architectural components
-- Use nested lists (indented) for branching or decision points
-- Include brief explanations of how each step connects to the next
-
-OUTPUT FORMAT:
-- Start with a one-sentence summary of the overall flow/relationship
-- Then list the key steps or components in logical order
-- For decision points, use indentation to show branches
-- End with the final outcome or result
-
-Example output for a process flow:
-
-The user authentication process follows these steps:
-
-1. User enters credentials on the login page
-2. System validates the credentials against the database
-   - If valid → proceed to step 3
-   - If invalid → show error message and return to step 1
-3. System generates a session token
-4. System redirects user to the dashboard
-
-Example output for an architecture:
-
-A typical web application has these key components:
-
-- **Frontend**: The user interface (React, Vue, etc.)
-  - Communicates with the API via HTTP requests
-- **API Gateway**: Routes requests to appropriate services
-  - Handles authentication and rate limiting
-- **Microservices**: Individual business logic components
-  - Each service owns its own data store
-- **Database**: Persistent data storage
-  - Accessed by microservices, never directly by frontend
-
-Keep the output concise (100-200 words) and focused on clarity.
-Output ONLY markdown text. No JSON, no code blocks.`;
+/** Maximum characters of lesson context passed to Stage 1 (token safety). */
+const CONTEXT_CHAR_LIMIT = 6000;
+/** Maximum characters of explanation text passed to Stage 2 (token safety). */
+const TEXT_CHAR_LIMIT = 4000;
 
 /**
- * User prompt template for the fallback text generation.
- * Used when diagram extraction fails after all retries.
+ * Builds the Stage 1 user prompt.
  *
- * @param originalText - The original explanation text that was meant to have a diagram
- * @returns Formatted user prompt for the fallback AI call
+ * @param topic - The concept to explain
+ * @param context - Surrounding lesson/course context (smart-truncated)
+ * @param previousConcept - Concepts already covered (for coherence)
  */
-export function buildFallbackUserPrompt(originalText: string): string {
-  return `The following text was meant to have an accompanying diagram, but diagram generation failed.
-Create a clear, text-based representation of the key components, flows, or relationships described.
+export function buildDiagramTextUserPrompt(
+  topic: string,
+  context: string,
+  previousConcept: string[]
+): string {
+  const trimmedContext = context.trim().slice(0, CONTEXT_CHAR_LIMIT);
+  const conceptsBlock =
+    previousConcept.length > 0
+      ? previousConcept.map((c) => `- ${c}`).join('\n')
+      : '(none — this is the first concept)';
 
-ORIGINAL TEXT:
+  return `Explain the following topic in a way that highlights its components, relationships, and flows. Write as if you're teaching a junior engineer.
+
+Topic: ${topic}
+
+LESSON CONTEXT (where this explanation will appear):
 """
-${originalText.slice(0, 2000)}
+${trimmedContext || '(no additional context provided)'}
 """
 
-Provide a numbered list or bulleted summary that captures the essential structure of what a diagram would have shown.
-Keep it concise and pedagogically useful.`;
+PREVIOUSLY COVERED CONCEPTS (build on these — do NOT re-explain them):
+${conceptsBlock}
+
+Remember:
+- Follow WHAT → WHY → HOW
+- Name each component and describe how components connect and what flows between them
+- 200-400 words total
+- Output ONLY markdown (no JSON, no wrapping code fences, no H1 heading)
+- Finish with the final trailer line: Key components: A, B, C (3-8 items, each 20 characters or fewer)`;
+}
+
+/** Options for the Stage 2 user prompt builder. */
+export interface ExtractionPromptOptions {
+  /** Use the simpler/stricter instruction variant (retry attempts). */
+  strict?: boolean;
+  /** Validator error message from the previous failed attempt (retry feedback). */
+  validationError?: string;
+}
+
+/**
+ * Builds the Stage 2 user prompt.
+ *
+ * Deterministic: the same inputs always produce the same prompt
+ * (required for Stage 2 idempotency).
+ *
+ * @param text - The explanation text to extract a diagram from
+ * @param keyComponents - Entities from Stage 1 that should become nodes
+ * @param diagramType - Force a specific diagram type (otherwise the model chooses)
+ * @param options - Strict variant + validator error feedback for retries
+ */
+export function buildDiagramExtractionUserPrompt(
+  text: string,
+  keyComponents: string[],
+  diagramType?: DiagramType,
+  options: ExtractionPromptOptions = {}
+): string {
+  const truncatedText = text.slice(0, TEXT_CHAR_LIMIT);
+
+  const componentsBlock =
+    keyComponents.length > 0
+      ? `KEY COMPONENTS (use these as the primary nodes — you may add 1-2 connecting nodes if needed):\n${keyComponents.map((c) => `- ${c}`).join('\n')}`
+      : 'KEY COMPONENTS: not provided — identify the most important components from the text yourself.';
+
+  const typeBlock = diagramType
+    ? `REQUIRED DIAGRAM TYPE: "${diagramType}" — you MUST use exactly this type.`
+    : 'DIAGRAM TYPE: choose the most appropriate of "flow", "relationship", "architecture", "sequence".';
+
+  const errorBlock = options.validationError
+    ? `\nYOUR PREVIOUS ATTEMPT WAS REJECTED BY THE VALIDATOR. Fix these EXACT problems:\n${options.validationError}\nDo not repeat these mistakes.\n`
+    : '';
+
+  const taskLine = options.strict
+    ? `Extract a SIMPLE diagram (max 5 nodes, prefer a linear structure) from this text:`
+    : `Extract a structured diagram from the following text explanation. Identify all key components (nodes) and their relationships (edges).`;
+
+  return `${taskLine}
+
+TEXT:
+"""
+${truncatedText}
+"""
+
+${componentsBlock}
+
+${typeBlock}
+${errorBlock}
+Return ONLY the JSON object — no prose, no code fences, nothing else.`;
 }
