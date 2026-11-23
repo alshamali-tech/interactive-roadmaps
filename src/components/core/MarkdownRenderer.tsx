@@ -7,12 +7,15 @@ import type { Components } from 'react-markdown';
 import { Copy, Check, Sparkles } from 'lucide-react';
 import type { WidgetConfig } from '@/curriculum/schema';
 import { widgetRegistry } from '@/engine/registry';
+import type { Diagram } from '@/engine/generatorSchema';
 
 interface MarkdownRendererProps {
   markdown: string;
   widgets: WidgetConfig[];
   showAITutor?: boolean;
   onAskAI?: (sectionTitle: string) => void;
+  /** Callback when "Explain This Diagram" is clicked on a ContextDiagram widget */
+  onExplainThisDiagram?: (diagram: Diagram) => void;
   className?: string;
 }
 
@@ -69,6 +72,7 @@ export function MarkdownRenderer({
   widgets,
   showAITutor,
   onAskAI,
+  onExplainThisDiagram,
   className = '',
 }: MarkdownRendererProps) {
   const handleCopyCode = useCallback(async (code: string) => {
@@ -161,13 +165,18 @@ export function MarkdownRenderer({
         );
       }
 
+      // Pass onExplainThisDiagram callback to context-diagram widgets
+      const extraProps = widgetConfig.type === 'context-diagram' && onExplainThisDiagram
+        ? { onExplainThisDiagram }
+        : {};
+
       return (
         <div className="not-prose my-6 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-          <WidgetComponent {...widgetConfig.props} />
+          <WidgetComponent {...widgetConfig.props} {...extraProps} />
         </div>
       );
     },
-  }), [handleCopyCode, widgets]);
+  }), [handleCopyCode, widgets, onExplainThisDiagram]);
 
   // Split markdown into segments (text, widgets, AI prompts)
   const segments = useMemo(() => {
@@ -251,9 +260,13 @@ export function MarkdownRenderer({
         if (segment.type === 'widget') {
           const RegisteredComponent = widgetRegistry.resolve(segment.widget);
           if (RegisteredComponent) {
+            // Pass onExplainThisDiagram callback to context-diagram widgets
+            const extraProps = segment.widget.type === 'context-diagram' && onExplainThisDiagram
+              ? { onExplainThisDiagram }
+              : {};
             return (
               <div key={index} className="my-5">
-                <RegisteredComponent {...segment.widget.props} />
+                <RegisteredComponent {...segment.widget.props} {...extraProps} />
               </div>
             );
           }
