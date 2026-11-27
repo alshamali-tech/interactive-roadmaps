@@ -30,6 +30,7 @@ import { generateRawCompletion } from './aiService';
 import {
   extractJson,
   validateDiagram,
+  formatDiagramErrors,
   WidgetConfigSchema,
   type Diagram,
   type DiagramType,
@@ -548,18 +549,18 @@ async function extractDiagramWithMeta(
       const parsed = extractJson(response);
       const candidate = normalizeDiagramCandidate(parsed);
       const validation = validateDiagram(candidate);
-      if (!validation.success) {
-        throw new Error(validation.error);
+      if (!validation.valid) {
+        throw new Error(formatDiagramErrors(validation.errors));
       }
 
       console.debug(`${LOG_PREFIX} Stage 2 output:`, {
-        type: validation.data.type,
-        title: validation.data.title,
-        nodes: validation.data.nodes.length,
-        edges: validation.data.edges.length,
+        type: validation.diagram.type,
+        title: validation.diagram.title,
+        nodes: validation.diagram.nodes.length,
+        edges: validation.diagram.edges.length,
       });
-      cacheSet(diagramCache, cacheKey, validation.data, DIAGRAM_CACHE_LIMIT);
-      return { diagram: validation.data, attempts: attempt + 1, lastError: null, fromCache: false };
+      cacheSet(diagramCache, cacheKey, validation.diagram, DIAGRAM_CACHE_LIMIT);
+      return { diagram: validation.diagram, attempts: attempt + 1, lastError: null, fromCache: false };
     } catch (error) {
       if (isAbortError(error)) throw error;
       lastError = errorMessage(error);
@@ -640,11 +641,11 @@ export function mergeAndValidate(
 
   if (diagram) {
     const validation = validateDiagram(diagram);
-    if (validation.success) {
+    if (validation.valid) {
       const widget: WidgetConfig = {
         id: widgetId,
         type: 'context-diagram',
-        props: { diagram: validation.data },
+        props: { diagram: validation.diagram },
       };
       const widgetCheck = WidgetConfigSchema.safeParse(widget);
       if (widgetCheck.success) {
@@ -659,7 +660,7 @@ export function mergeAndValidate(
       );
     } else {
       console.warn(
-        `${LOG_PREFIX} Stage 3: diagram failed re-validation — falling back to text-only.\n${validation.error}`
+        `${LOG_PREFIX} Stage 3: diagram failed re-validation — falling back to text-only.\n${formatDiagramErrors(validation.errors)}`
       );
     }
   }

@@ -254,7 +254,7 @@ describe('extractDiagramJSON (Stage 2)', () => {
     // Attempt 2 used the strict prompt and included the exact validator error
     expect(mockFn.mock.calls[1][0]).toContain('EXTREMELY strict');
     expect(mockFn.mock.calls[1][1]).toContain('REJECTED BY THE VALIDATOR');
-    expect(mockFn.mock.calls[1][1]).toContain('orphan');
+    expect(mockFn.mock.calls[1][1]).toContain('Orphan node detected: lonely');
   });
 
   it('returns null after exhausting all attempts (default: 3 total)', async () => {

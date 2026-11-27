@@ -17,6 +17,11 @@ export const DiagramNodeTypeSchema = z.enum([
 ]);
 export type DiagramNodeType = z.infer<typeof DiagramNodeTypeSchema>;
 
+/** Hex color string — #RGB or #RRGGBB (e.g. "#3b82f6"). */
+export const HexColorSchema = z
+  .string()
+  .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Invalid hex color — use #RGB or #RRGGBB.');
+
 /** A single node in a diagram */
 export const DiagramNodeSchema = z.object({
   id: z.string().min(1).describe('Unique node identifier'),
@@ -31,8 +36,28 @@ export const DiagramNodeSchema = z.object({
     .max(200)
     .optional()
     .describe('Optional description for tooltip/click detail'),
+  color: HexColorSchema.optional().describe('Optional custom hex color for styling'),
+  icon: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(
+      /^[A-Za-z][A-Za-z0-9-]*$/,
+      'Invalid icon name — use a Lucide icon name (e.g. "database", "arrow-right").'
+    )
+    .optional()
+    .describe('Optional Lucide icon name'),
 });
 export type DiagramNode = z.infer<typeof DiagramNodeSchema>;
+
+/** Optional custom edge styling (all fields optional). */
+export const DiagramEdgeStyleSchema = z.object({
+  stroke: HexColorSchema.optional().describe('Edge line color'),
+  strokeWidth: z.number().min(0.5).max(10).optional().describe('Edge line width in px'),
+  dashed: z.boolean().optional().describe('Render the edge as dashed'),
+  opacity: z.number().min(0).max(1).optional().describe('Edge opacity (0-1)'),
+});
+export type DiagramEdgeStyle = z.infer<typeof DiagramEdgeStyleSchema>;
 
 /** A single edge connecting two nodes */
 export const DiagramEdgeSchema = z.object({
@@ -43,6 +68,11 @@ export const DiagramEdgeSchema = z.object({
     .max(15)
     .optional()
     .describe('Short label on the edge (max 15 characters)'),
+  animated: z
+    .boolean()
+    .optional()
+    .describe('Animate the edge. Optional — when omitted it is treated as false (not animated).'),
+  style: DiagramEdgeStyleSchema.optional().describe('Optional custom edge styling'),
 });
 export type DiagramEdge = z.infer<typeof DiagramEdgeSchema>;
 
@@ -56,10 +86,12 @@ export const DiagramTypeSchema = z.enum([
 export type DiagramType = z.infer<typeof DiagramTypeSchema>;
 
 /**
- * Helper function to detect cycles in a directed graph using DFS.
- * Used to validate that 'flow' type diagrams are acyclic.
+ * DFS cycle detection for directed graphs — O(V+E).
+ * Returns the cycle path (e.g. ['a', 'b', 'a']) or null when acyclic.
+ * Assumes unique node IDs and edges referencing existing nodes
+ * (the schema validates those first).
  */
-function hasCycle(nodes: DiagramNode[], edges: DiagramEdge[]): boolean {
+function findCycle(nodes: DiagramNode[], edges: DiagramEdge[]): string[] | null {
   const adjacency = new Map<string, string[]>();
   for (const node of nodes) {
     adjacency.set(node.id, []);
@@ -69,33 +101,85 @@ function hasCycle(nodes: DiagramNode[], edges: DiagramEdge[]): boolean {
   }
 
   const visited = new Set<string>();
-  const recursionStack = new Set<string>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
 
-  function dfs(nodeId: string): boolean {
-    if (recursionStack.has(nodeId)) return true; // Cycle detected
-    if (visited.has(nodeId)) return false; // Already fully processed
-
+  function dfs(nodeId: string): string[] | null {
     visited.add(nodeId);
-    recursionStack.add(nodeId);
+    onStack.add(nodeId);
+    stack.push(nodeId);
 
-    const neighbors = adjacency.get(nodeId) || [];
-    for (const neighbor of neighbors) {
-      if (dfs(neighbor)) return true;
+    for (const neighbor of adjacency.get(nodeId) ?? []) {
+      if (onStack.has(neighbor)) {
+        // Cycle found — slice the current path from the first occurrence.
+        return [...stack.slice(stack.indexOf(neighbor)), neighbor];
+      }
+      if (!visited.has(neighbor)) {
+        const cycle = dfs(neighbor);
+        if (cycle) return cycle;
+      }
     }
 
-    recursionStack.delete(nodeId);
-    return false;
+    stack.pop();
+    onStack.delete(nodeId);
+    return null;
   }
 
-  // Check for cycles starting from each node
   for (const node of nodes) {
-    if (dfs(node.id)) return true;
+    if (!visited.has(node.id)) {
+      const cycle = dfs(node.id);
+      if (cycle) return cycle;
+    }
   }
-
-  return false;
+  return null;
 }
 
-/** The complete diagram structure with semantic validation */
+/**
+ * Counts connected components treating edges as UNDIRECTED — O(V+E).
+ * A structurally valid diagram must have exactly 1 component.
+ * Assumes unique node IDs and edges referencing existing nodes.
+ */
+function countConnectedComponents(nodes: DiagramNode[], edges: DiagramEdge[]): number {
+  const adjacency = new Map<string, string[]>();
+  for (const node of nodes) {
+    adjacency.set(node.id, []);
+  }
+  for (const edge of edges) {
+    adjacency.get(edge.from)?.push(edge.to);
+    adjacency.get(edge.to)?.push(edge.from);
+  }
+
+  const visited = new Set<string>();
+  let components = 0;
+
+  for (const node of nodes) {
+    if (visited.has(node.id)) continue;
+    components++;
+    const queue = [node.id];
+    visited.add(node.id);
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      for (const neighbor of adjacency.get(current) ?? []) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+  }
+  return components;
+}
+
+/**
+ * The complete diagram structure with semantic validation (W1.2).
+ *
+ * A single superRefine emits ONE issue PER violation (per duplicate ID,
+ * per dangling edge endpoint, per orphan node, ...), so safeParse collects
+ * ALL validation errors — not just the first one.
+ *
+ * Check order matters: edge references are validated BEFORE cycle detection
+ * and connectivity analysis (those need a well-defined graph).
+ */
 export const DiagramSchema = z
   .object({
     type: DiagramTypeSchema.describe('Type of diagram'),
@@ -115,93 +199,318 @@ export const DiagramSchema = z
       .max(10)
       .describe('Array of edges (1-10 edges)'),
   })
-  .refine(
-    (data) => {
-      // Node IDs must be unique
-      const ids = data.nodes.map((n) => n.id);
-      return new Set(ids).size === ids.length;
-    },
-    { message: 'Node IDs must be unique.' }
-  )
-  .refine(
-    (data) => {
-      // All edge 'from' and 'to' must reference existing node IDs
-      const nodeIds = new Set(data.nodes.map((n) => n.id));
-      return data.edges.every((e) => nodeIds.has(e.from) && nodeIds.has(e.to));
-    },
-    { message: 'All edges must reference existing node IDs in the nodes array.' }
-  )
-  .refine(
-    (data) => {
-      // No orphan nodes — every node must have at least one connection
-      return data.nodes.every((node) => {
-        return data.edges.some((e) => e.from === node.id || e.to === node.id);
-      });
-    },
-    { message: 'No orphan nodes allowed — every node must have at least one edge.' }
-  )
-  .refine(
-    (data) => {
-      // For 'flow' type diagrams, the graph must be acyclic
-      if (data.type !== 'flow') return true;
-      return !hasCycle(data.nodes, data.edges);
-    },
-    { message: 'Flow diagrams must be acyclic — no loops or cycles allowed.' }
-  )
-  .refine(
-    (data) => {
-      // For 'flow' type diagrams, must have at least one 'input' node (start node)
-      if (data.type !== 'flow') return true;
-      return data.nodes.some((n) => n.type === 'input');
-    },
-    { message: 'Flow diagrams must have at least one start node (type: "input").' }
-  )
-  .refine(
-    (data) => {
-      // For 'flow' type diagrams, must have at least one 'output' node (end node)
-      if (data.type !== 'flow') return true;
-      return data.nodes.some((n) => n.type === 'output');
-    },
-    { message: 'Flow diagrams must have at least one end node (type: "output").' }
-  )
-  .refine(
-    (data) => {
-      // Decision nodes must have at least 2 outgoing edges
-      const decisionNodes = data.nodes.filter((n) => n.type === 'decision');
-      for (const node of decisionNodes) {
-        const outgoingEdges = data.edges.filter((e) => e.from === node.id);
-        if (outgoingEdges.length < 2) {
-          return false;
+  .superRefine((data, ctx) => {
+    const nodeIds = data.nodes.map((n) => n.id);
+    const idSet = new Set(nodeIds);
+
+    // ── Rule 4: Unique node IDs (report each duplicated ID once) ──
+    const seen = new Set<string>();
+    const reported = new Set<string>();
+    for (const id of nodeIds) {
+      if (seen.has(id) && !reported.has(id)) {
+        reported.add(id);
+        ctx.addIssue({ code: 'custom', path: ['nodes'], message: `Duplicate node ID: ${id}` });
+      }
+      seen.add(id);
+    }
+    const idsUnique = idSet.size === nodeIds.length;
+
+    // ── Rule 1: Edge reference validation (runs BEFORE cycle detection) ──
+    let danglingCount = 0;
+    data.edges.forEach((edge, i) => {
+      if (!idSet.has(edge.from)) {
+        danglingCount++;
+        ctx.addIssue({
+          code: 'custom',
+          path: ['edges', i, 'from'],
+          message: `Edge references non-existent node: ${edge.from}`,
+        });
+      }
+      if (!idSet.has(edge.to)) {
+        danglingCount++;
+        ctx.addIssue({
+          code: 'custom',
+          path: ['edges', i, 'to'],
+          message: `Edge references non-existent node: ${edge.to}`,
+        });
+      }
+    });
+    const edgesValid = danglingCount === 0;
+    const validEdges = edgesValid
+      ? data.edges
+      : data.edges.filter((e) => idSet.has(e.from) && idSet.has(e.to));
+
+    // ── Rule 2: No orphan nodes (only edges with valid endpoints count) ──
+    const connected = new Set<string>();
+    for (const edge of validEdges) {
+      connected.add(edge.from);
+      connected.add(edge.to);
+    }
+    for (const id of idSet) {
+      if (!connected.has(id)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nodes'],
+          message: `Orphan node detected: ${id} has no connections`,
+        });
+      }
+    }
+
+    // Graph-shape rules need a well-defined graph (unique IDs + valid edges).
+    if (idsUnique && edgesValid) {
+      // ── Rule 3: Flow acyclicity (DFS, O(V+E)) ──
+      if (data.type === 'flow') {
+        const cycle = findCycle(data.nodes, data.edges);
+        if (cycle) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['edges'],
+            message: `Flow diagrams must be acyclic. Cycle detected involving nodes: ${cycle.join(' → ')}`,
+          });
         }
       }
-      return true;
-    },
-    { message: 'Decision nodes must have at least 2 outgoing edges.' }
-  );
+
+      // ── Rule 5: Connected graph (undirected reachability) ──
+      const subgraphs = countConnectedComponents(data.nodes, data.edges);
+      if (subgraphs > 1) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nodes'],
+          message: `Disconnected graph detected. Subgraphs: ${subgraphs}`,
+        });
+      }
+    }
+
+    // ── Pedagogical rules (the extraction prompts teach these — keep in sync) ──
+    if (data.type === 'flow') {
+      if (!data.nodes.some((n) => n.type === 'input')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nodes'],
+          message: 'Flow diagrams must have at least one start node (type: "input").',
+        });
+      }
+      if (!data.nodes.some((n) => n.type === 'output')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nodes'],
+          message: 'Flow diagrams must have at least one end node (type: "output").',
+        });
+      }
+    }
+    for (const node of data.nodes) {
+      if (node.type !== 'decision') continue;
+      const outgoing = validEdges.filter((e) => e.from === node.id).length;
+      if (outgoing < 2) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nodes'],
+          message: `Decision node "${node.id}" must have at least 2 outgoing edges.`,
+        });
+      }
+    }
+  });
 
 export type Diagram = z.infer<typeof DiagramSchema>;
 
 /**
- * Validates a diagram against the DiagramSchema.
- * Returns the validated diagram on success, or a detailed error message on failure.
- *
- * @param data - The diagram data to validate
- * @returns Either the validated Diagram object, or an error message string
+ * Result of {@link validateDiagram}.
+ * On failure, `errors` contains ALL validation errors (one string per issue),
+ * each prefixed with its field path when available (e.g. "edges.1.to: ...").
  */
-export function validateDiagram(
-  data: unknown
-): { success: true; data: Diagram } | { success: false; error: string } {
+export type DiagramValidationResult =
+  | { valid: true; diagram: Diagram }
+  | { valid: false; errors: string[] };
+
+/**
+ * Validates a diagram against the DiagramSchema (strict — never auto-fixes).
+ *
+ * Collects ALL validation errors, not just the first one: field-level errors,
+ * duplicate IDs, dangling edge references, orphan nodes, cycles in flows,
+ * disconnected subgraphs and the pedagogical rules are all reported together.
+ *
+ * @param data - The diagram data to validate (unknown — safe for AI output)
+ * @returns `{ valid: true, diagram }` on success, `{ valid: false, errors }` on failure
+ */
+export function validateDiagram(data: unknown): DiagramValidationResult {
   const result = DiagramSchema.safeParse(data);
   if (result.success) {
-    return { success: true, data: result.data };
+    return { valid: true, diagram: result.data };
   }
-  const fieldErrors = result.error.issues
-    .map((i) => `  • ${i.path.join('.')}: ${i.message}`)
-    .join('\n');
-  return {
-    success: false,
-    error: `Diagram validation failed:\n${fieldErrors}`,
+  const errors = result.error.issues.map((issue) => {
+    // Custom refinement messages name their offender directly ("Orphan node
+    // detected: x has no connections"), so a bare field path would be redundant
+    // noise. A path that reaches into an array element ("edges.1.to") instead
+    // says *which* of several similar elements is at fault — information the
+    // message itself lacks — so keep the prefix for those, and for all core Zod
+    // field errors (Required, Invalid input, Too big...), which are generic.
+    if (issue.code === 'custom' && issue.path.length <= 1) return issue.message;
+    const path = issue.path.join('.');
+    return path ? `${path}: ${issue.message}` : issue.message;
+  });
+  return { valid: false, errors };
+}
+
+/** Formats validation errors into a single human/LLM-readable block (retry feedback). */
+export function formatDiagramErrors(errors: string[]): string {
+  return `Diagram validation failed:\n${errors.map((e) => `  • ${e}`).join('\n')}`;
+}
+
+/** Options for {@link fixCommonDiagramErrors}. */
+export interface FixDiagramOptions {
+  /**
+   * Strict mode: validate the input exactly as given — never auto-fix.
+   * Throws with all validation errors if the diagram is invalid.
+   */
+  strict?: boolean;
+}
+
+/**
+ * Automatically fixes common structural diagram errors (weak-model rescue):
+ *
+ *   1. Removes duplicate node IDs (keeps the FIRST occurrence).
+ *   2. Removes edges referencing non-existent nodes (and exact duplicate
+ *      from→to pairs, which helps stay under the 10-edge limit).
+ *   3. Connects orphan nodes to their nearest already-connected neighbor
+ *      (nearest = closest in array order — deterministic, no coordinates).
+ *      Input-type orphans point INTO the graph; all others receive an edge.
+ *      Each orphan gains exactly one edge, so no cycle can be introduced.
+ *      With no usable edges at all, nodes are chained in array order.
+ *   4. Defaults a missing/empty title to "Untitled Diagram".
+ *
+ * The fixed candidate is then strictly validated — anything this function
+ * cannot repair (cycles in flows, missing input/output nodes, bad decision
+ * branches, field violations, >8 nodes, ...) throws with ALL remaining errors.
+ *
+ * Pure and deterministic: never mutates the input; same input → same output.
+ *
+ * @param diagram - The (possibly broken) diagram to repair
+ * @param options - `{ strict: true }` disables all auto-fixing (validate only)
+ * @returns A fully validated Diagram
+ * @throws Error if the diagram is unfixable (message lists every remaining error)
+ */
+export function fixCommonDiagramErrors(
+  diagram: Partial<Diagram>,
+  options: FixDiagramOptions = {}
+): Diagram {
+  if (!diagram || typeof diagram !== 'object') {
+    throw new Error('fixCommonDiagramErrors: input must be a diagram object.');
+  }
+
+  // Strict mode — no fixes at all; validate exactly what was given.
+  if (options.strict) {
+    const check = validateDiagram(diagram);
+    if (!check.valid) throw new Error(formatDiagramErrors(check.errors));
+    return check.diagram;
+  }
+
+  // ── Unfixable prerequisites ──
+  const typeResult = DiagramTypeSchema.safeParse(diagram.type);
+  if (!typeResult.success) {
+    throw new Error(
+      'Cannot auto-fix: missing or invalid diagram "type" (expected flow | relationship | architecture | sequence).'
+    );
+  }
+  if (!Array.isArray(diagram.nodes) || diagram.nodes.length < 2) {
+    throw new Error(
+      `Cannot auto-fix: a diagram needs at least 2 nodes (got ${Array.isArray(diagram.nodes) ? diagram.nodes.length : 0}).`
+    );
+  }
+  if (diagram.nodes.length > 8) {
+    throw new Error(
+      `Cannot auto-fix: more than 8 nodes (${diagram.nodes.length}) — remove nodes explicitly.`
+    );
+  }
+  for (const node of diagram.nodes) {
+    if (!node || typeof node !== 'object' || typeof node.id !== 'string' || !node.id) {
+      throw new Error('Cannot auto-fix: every node must be an object with a non-empty string "id".');
+    }
+  }
+
+  // ── Fix 1: duplicate node IDs — keep the first occurrence ──
+  const seenIds = new Set<string>();
+  const nodes: DiagramNode[] = [];
+  for (const node of diagram.nodes) {
+    if (seenIds.has(node.id)) continue;
+    seenIds.add(node.id);
+    nodes.push(node);
+  }
+
+  // ── Fix 2: drop dangling edges + exact duplicate from→to pairs ──
+  const rawEdges = Array.isArray(diagram.edges) ? diagram.edges : [];
+  const seenPairs = new Set<string>();
+  const edges: DiagramEdge[] = [];
+  for (const edge of rawEdges) {
+    if (!edge || typeof edge !== 'object') continue;
+    if (typeof edge.from !== 'string' || typeof edge.to !== 'string') continue;
+    if (!seenIds.has(edge.from) || !seenIds.has(edge.to)) continue;
+    const pair = `${edge.from}\u0000${edge.to}`;
+    if (seenPairs.has(pair)) continue;
+    seenPairs.add(pair);
+    edges.push(edge);
+  }
+
+  // ── Fix 3: connect orphan nodes to their nearest neighbor ──
+  const touched = new Set<string>();
+  for (const edge of edges) {
+    touched.add(edge.from);
+    touched.add(edge.to);
+  }
+
+  const addEdge = (from: string, to: string): void => {
+    if (edges.length >= 10) {
+      throw new Error('Cannot auto-fix: connecting orphan nodes would exceed the 10-edge limit.');
+    }
+    edges.push({ from, to });
+    touched.add(from);
+    touched.add(to);
   };
+
+  if (edges.length === 0) {
+    // No usable edges at all — chain nodes in array order (≤7 edges, acyclic).
+    for (let i = 0; i < nodes.length - 1; i++) {
+      addEdge(nodes[i].id, nodes[i + 1].id);
+    }
+  } else {
+    for (let i = 0; i < nodes.length; i++) {
+      const orphan = nodes[i];
+      if (touched.has(orphan.id)) continue;
+      // Nearest = closest already-connected node in array order (search
+      // outward from the orphan's position; ties prefer the earlier node).
+      let neighbor: DiagramNode | null = null;
+      for (let distance = 1; distance < nodes.length && !neighbor; distance++) {
+        const before = nodes[i - distance];
+        const after = nodes[i + distance];
+        if (before && touched.has(before.id)) neighbor = before;
+        else if (after && touched.has(after.id)) neighbor = after;
+      }
+      if (!neighbor) {
+        throw new Error(
+          `Cannot auto-fix: no connected neighbor available for orphan node "${orphan.id}".`
+        );
+      }
+      // Input nodes are sources — point them at the graph; others receive.
+      if (orphan.type === 'input') addEdge(orphan.id, neighbor.id);
+      else addEdge(neighbor.id, orphan.id);
+    }
+  }
+
+  const candidate: Diagram = {
+    type: typeResult.data,
+    title:
+      typeof diagram.title === 'string' && diagram.title.trim()
+        ? diagram.title
+        : 'Untitled Diagram',
+    nodes,
+    edges,
+  };
+
+  // Final strict validation — throws with ALL remaining errors if unfixable.
+  const check = validateDiagram(candidate);
+  if (!check.valid) {
+    throw new Error(formatDiagramErrors(check.errors));
+  }
+  return check.diagram;
 }
 
 // ───────────────────────────────────────────────────────────────
