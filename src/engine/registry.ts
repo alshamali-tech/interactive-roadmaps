@@ -249,25 +249,35 @@ widgetRegistry
   
   /**
    * **Context Diagram Widget** (`context-diagram`)
-   * 
-   * System architecture visualization using Mermaid diagrams.
-   * 
-   * **What it does:** Renders flowcharts, sequence diagrams, and other Mermaid-supported diagram types.
-   * Supports interactive zoom, pan, and theme switching.
-   * 
+   *
+   * Read-only, interactive architecture/flow diagram rendered with React Flow
+   * (@xyflow/react) — NOT Mermaid. Positions come from the W1.5 auto-layout,
+   * so authored data carries no coordinates.
+   *
+   * **What it does:** Renders a validated W1.2 diagram: nodes styled by type
+   * (input/process/decision/output/storage/service), zoom + pan on desktop, and
+   * a vertical card stack under 768px. Nodes are not draggable; clicking a node
+   * that has a description opens a detail panel. Malformed data degrades to a
+   * fallback card via an internal error boundary.
+   *
    * **When to use:**
    * - Visualizing system architecture and component relationships
    * - Teaching design patterns and data flow
    * - Explaining protocols and communication sequences
-   * 
+   *
    * **Required props:**
-   * - `diagramType`: 'flowchart' | 'sequence' | 'class' | 'er' | 'custom'
-   * - `source`: Mermaid diagram source code
-   * 
+   * - `diagram`: a Diagram validated by DiagramSchema — `type`
+   *   ('flow' | 'relationship' | 'architecture' | 'sequence'), `title`,
+   *   `nodes[]` (2-8) and `edges[]` (1-10)
+   *
    * **Optional props:**
-   * - `caption`: Diagram caption/description
-   * - `title`: Diagram title
-   * - `theme`: 'default' | 'dark' | 'forest' | 'neutral'
+   * - `onExplainThisDiagram`: (diagram) => void — shows the "Explain This
+   *   Diagram" button; injected by MarkdownRenderer for this widget type
+   *
+   * Cast to WidgetComponent because ContextDiagramProps has no index signature
+   * and therefore does not structurally satisfy WidgetProps. The cast is a
+   * TypeScript formality: the schema (generatorSchema.ts `props.diagram`) and
+   * the parser (lessonParser.ts) both emit exactly this shape.
    */
   .register('context-diagram', ContextDiagram as unknown as WidgetComponent<WidgetProps>)
   

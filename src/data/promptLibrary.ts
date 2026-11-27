@@ -7,8 +7,8 @@ export interface PromptStarter {
     | 'global'
     | 'mutator'
     | 'sandbox'
-    | 'node_graph'
-    | 'trade_off'
+    | 'context-diagram'
+    | 'trade-off'
     | 'generator';
 }
 

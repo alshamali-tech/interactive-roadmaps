@@ -51,6 +51,19 @@ describe('DIAGRAM_TEXT_SYSTEM_PROMPT', () => {
     expect(DIAGRAM_TEXT_SYSTEM_PROMPT).toContain('3-8');
   });
 
+  it('models the trailer format with few-shot examples (W1.3)', () => {
+    // The trailer is regex-parsed by the generator, so an unmodelled format is a
+    // silent loss of every key component.
+    expect(DIAGRAM_TEXT_SYSTEM_PROMPT).toContain('EXAMPLES OF A CORRECT FINAL LINE');
+    expect(DIAGRAM_TEXT_SYSTEM_PROMPT).toMatch(
+      /Key components: [A-Z][^,\n]+, [A-Z][^,\n]+, [A-Z][^\n]*/
+    );
+  });
+
+  it('tells the model the listed names are reused verbatim as node labels', () => {
+    expect(DIAGRAM_TEXT_SYSTEM_PROMPT).toContain('VERBATIM');
+  });
+
   it('instructs the model to use context and previous concepts', () => {
     expect(DIAGRAM_TEXT_SYSTEM_PROMPT).toContain('previously covered concepts');
     expect(DIAGRAM_TEXT_SYSTEM_PROMPT).toContain('do NOT re-explain');
@@ -111,6 +124,22 @@ describe('DIAGRAM_EXTRACTION_SYSTEM_PROMPT', () => {
     expect(DIAGRAM_EXTRACTION_SYSTEM_PROMPT).toContain('acyclic');
     expect(DIAGRAM_EXTRACTION_SYSTEM_PROMPT).toContain('at least 2 outgoing edges');
     expect(DIAGRAM_EXTRACTION_SYSTEM_PROMPT).toContain('reference existing node IDs');
+  });
+
+  it('teaches schema Rule 5 (one connected graph), which "no orphans" does not cover', () => {
+    expect(DIAGRAM_EXTRACTION_SYSTEM_PROMPT).toMatch(/ONE connected graph/i);
+    expect(DIAGRAM_EXTRACTION_STRICT_PROMPT).toMatch(/connected/i);
+    expect(DIAGRAM_EXTRACTION_STRICT_PROMPT).toMatch(/Disconnected subgraphs/i);
+  });
+
+  it('gives an explicit policy for the optional styling fields the schema validates', () => {
+    // A malformed "color"/"icon" rejects the entire diagram, and
+    // fixCommonDiagramErrors cannot repair it, so the prompt must address it.
+    for (const prompt of [DIAGRAM_EXTRACTION_SYSTEM_PROMPT, DIAGRAM_EXTRACTION_STRICT_PROMPT]) {
+      expect(prompt).toMatch(/SHOULD BE OMITTED|Do NOT output/);
+      expect(prompt).toContain('"color"');
+      expect(prompt).toContain('"icon"');
+    }
   });
 
   it('includes the exact JSON shape and few-shot examples', () => {
@@ -240,6 +269,41 @@ describe('buildDiagramExtractionUserPrompt', () => {
   it('uses the SIMPLE task line in strict mode', () => {
     const prompt = buildDiagramExtractionUserPrompt(text, components, undefined, { strict: true });
     expect(prompt).toContain('SIMPLE diagram (max 5 nodes');
+  });
+
+  it('clamps the component list to the strict node budget instead of contradicting it', () => {
+    const eight = ['A1', 'B2', 'C3', 'D4', 'E5', 'F6', 'G7', 'H8'];
+    const strict = buildDiagramExtractionUserPrompt(text, eight, undefined, { strict: true });
+    // Stage 1 may name 8 components while the strict prompt allows 5 nodes.
+    for (const kept of ['A1', 'B2', 'C3', 'D4', 'E5']) expect(strict).toContain(`- ${kept}`);
+    for (const dropped of ['F6', 'G7', 'H8']) expect(strict).not.toContain(`- ${dropped}`);
+    expect(strict).toContain('do NOT add extra nodes');
+
+    const relaxed = buildDiagramExtractionUserPrompt(text, eight);
+    expect(relaxed).toContain('- H8');
+    expect(relaxed).toContain('you may add 1-2 connecting nodes');
+  });
+
+  it('keeps the budget in sync with the strict system prompt cap', () => {
+    const strictPrompt = buildDiagramExtractionUserPrompt(
+      text,
+      Array.from({ length: 9 }, (_, i) => `C${i}`),
+      undefined,
+      { strict: true }
+    );
+    const listed = (strictPrompt.match(/^- C\d/gm) ?? []).length;
+    const cap = Number(DIAGRAM_EXTRACTION_STRICT_PROMPT.match(/No more than (\d+) nodes/)?.[1]);
+    expect(cap).toBe(5);
+    expect(listed).toBe(Math.min(9, cap));
+  });
+
+  it('asks for a minimal repair rather than a redesign on retry', () => {
+    const prompt = buildDiagramExtractionUserPrompt(text, components, undefined, {
+      strict: true,
+      validationError: 'Orphan node detected: lonely has no connections',
+    });
+    expect(prompt).toMatch(/same conceptual structure/i);
+    expect(prompt).toMatch(/do NOT redesign/i);
   });
 
   it('embeds validator error feedback on retries', () => {

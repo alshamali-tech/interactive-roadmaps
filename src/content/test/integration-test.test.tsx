@@ -81,12 +81,15 @@ Object.defineProperty(window, 'localStorage', {
   writable: true,
 });
 
-// Mock matchMedia for mobile detection
+// Mock matchMedia for mobile detection — desktop unless a suite opts in.
+// Returning query.includes('max-width: 768px') here would force the mobile
+// branch everywhere, which duplicates node text (card body + detail sheet) and
+// makes getByText ambiguous.
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   configurable: true,
   value: vi.fn().mockImplementation((query) => ({
-    matches: query.includes('max-width: 768px'),
+    matches: false,
     media: query,
     onchange: null,
     addListener: vi.fn(),
@@ -113,9 +116,9 @@ describe('Cross-Widget Integration Testing', () => {
     localStorageMock.setItem.mockClear();
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     (globalThis as any).ResizeObserver = MockResizeObserver;
-    // Reset matchMedia to desktop by default
+    // Reset matchMedia to desktop by default (Mobile Rendering overrides this)
     (window.matchMedia as any).mockImplementation((query: string) => ({
-      matches: query.includes('max-width: 768px'),
+      matches: false,
       media: query,
       onchange: null,
       addListener: vi.fn(),

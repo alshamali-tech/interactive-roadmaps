@@ -13,6 +13,12 @@
  * deterministically in code — see buildTextFallback() in diagramGenerator.ts.
  * No AI call is needed for the fallback, so it can never fail.
  *
+ * NOTE: The original W1.3 brief asked Stage 1 to return {"text", "keyComponents"}
+ * JSON. That was replaced on purpose: wrapping 200-400 words of prose in a JSON
+ * string is the single most common weak-model failure (escaped newlines, unquoted
+ * markdown), and Stage 1 output is never structurally validated anyway. The prose
+ * plus a one-line trailer gives the same data with no parse step to fail.
+ *
  * All prompts target the W1.2 schema in generatorSchema.ts:
  *   - diagram types: flow | relationship | architecture | sequence
  *   - node types:    input | process | decision | output | storage | service
@@ -61,7 +67,16 @@ OUTPUT FORMAT:
 - Do NOT include an H1 heading — just start with your introductory paragraph.
 - End your response with ONE final line in exactly this format:
 Key components: Component A, Component B, Component C
-- That line lists 3-8 key components/entities (the things that should become diagram nodes), comma-separated, each 20 characters or fewer.`;
+- That line lists 3-8 key components/entities (the things that should become diagram nodes), comma-separated, each 20 characters or fewer.
+- The names you list are reused VERBATIM as the diagram's node labels in the next stage, so write them as short, specific noun phrases with no trailing punctuation.
+
+EXAMPLES OF A CORRECT FINAL LINE:
+
+Topic: how a load balancer spreads traffic across servers
+Key components: Client, Load Balancer, Web Server A, Web Server B, Health Check
+
+Topic: how a database uses an index to answer a query
+Key components: Incoming Query, Index Lookup, Table Scan, Result Set`;
 
 // ───────────────────────────────────────────────────────────────
 // Few-shot examples (typed against the W1.2 Diagram schema)
@@ -198,6 +213,7 @@ ABSOLUTE RULES — VIOLATION MEANS FAILURE:
 6. ALL edges must reference existing node IDs.
 7. Node IDs must be unique, kebab-case (e.g., "check-input", "send-response").
 8. No orphan nodes — every node must connect to at least one edge.
+9. All nodes must form ONE connected graph. Two small groups that share no edge between them are rejected, even when every node in each group is connected to something.
 
 DIAGRAM TYPES — choose the most appropriate (or use the REQUIRED type if one is given):
 - "flow": Step-by-step processes and workflows (DEFAULT — use when in doubt). Must be acyclic (no loops), with at least one "input" node (start) and at least one "output" node (end).
@@ -220,6 +236,8 @@ SIZE AND FIELD CONSTRAINTS (enforced by a strict validator):
 - node "id": required, unique, kebab-case
 - node "description": optional, max 200 characters — one helpful sentence shown when the learner clicks the node
 - edge "label": optional, max 15 characters (e.g., "Yes", "No", "HTTP", "SQL")
+
+STYLING FIELDS: "color", "icon", "animated" and "style" are accepted but SHOULD BE OMITTED — the renderer styles every node type itself. If you do use one, an invalid format rejects the whole diagram: "color" must be hex (e.g. #3b82f6), "icon" must be letters/digits/hyphens only (e.g. database, arrow-right), "animated" must be true or false. When in doubt, leave them out.
 
 Return this EXACT JSON shape:
 {
@@ -269,15 +287,18 @@ ABSOLUTE RULES — ZERO TOLERANCE:
 4. NO \`\`\`json code blocks wrapping your output.
 5. ALL edges MUST reference existing node IDs — no dangling references.
 6. Node IDs must be unique and kebab-case (e.g., "check-input", "send-response").
-7. Node labels: max 20 characters. Edge labels: max 15 characters. Title: max 50 characters.
+7. Node labels: max 20 characters. Edge labels: max 15 characters. Title: max 50 characters. Node descriptions: max 200 characters.
 8. No more than 5 nodes total — keep it SIMPLE. Prefer a linear structure.
 9. No more than 6 edges total.
 10. For "flow" type: at least one "input" node, at least one "output" node, and NO cycles.
 11. Avoid "decision" nodes unless the text clearly describes a branch. If you use one, it MUST have at least 2 outgoing edges labeled "Yes" and "No".
+12. Every node must be reachable from every other node (ignoring arrow direction) — ONE connected graph, and at least 2 nodes.
+13. Do NOT output "color", "icon", "style" or "animated". Emit only type, title, nodes and edges.
 
 COMMON MISTAKES THAT CAUSE REJECTION — AVOID THESE:
 ❌ Dangling edges — "from"/"to" references a node ID that doesn't exist in the nodes array
 ❌ Orphan nodes — nodes never connected by any edge
+❌ Disconnected subgraphs — two groups of nodes with no edge linking the groups. This is NOT the same as an orphan: every node can be connected to a neighbour and still be rejected because the graph is split in two
 ❌ Cycles in "flow" diagrams — following edges leads back to a previous node
 ❌ Duplicate node IDs
 ❌ Missing "input" or "output" node in a "flow" diagram
@@ -312,6 +333,8 @@ REMINDER: Start with "{", end with "}". NOTHING ELSE. If you write even one word
 const CONTEXT_CHAR_LIMIT = 6000;
 /** Maximum characters of explanation text passed to Stage 2 (token safety). */
 const TEXT_CHAR_LIMIT = 4000;
+/** Must equal the "No more than 5 nodes" cap in DIAGRAM_EXTRACTION_STRICT_PROMPT. */
+const STRICT_NODE_BUDGET = 5;
 
 /**
  * Builds the Stage 1 user prompt.
@@ -378,17 +401,30 @@ export function buildDiagramExtractionUserPrompt(
 ): string {
   const truncatedText = text.slice(0, TEXT_CHAR_LIMIT);
 
-  const componentsBlock =
-    keyComponents.length > 0
-      ? `KEY COMPONENTS (use these as the primary nodes — you may add 1-2 connecting nodes if needed):\n${keyComponents.map((c) => `- ${c}`).join('\n')}`
-      : 'KEY COMPONENTS: not provided — identify the most important components from the text yourself.';
+  // Stage 1 is told to name 3-8 components, but the strict retry prompt caps the
+  // diagram at STRICT_NODE_BUDGET nodes. Listing all 8 during a retry orders the
+  // model to do two incompatible things at once, so the list is clamped instead.
+  const listedComponents = options.strict
+    ? keyComponents.slice(0, STRICT_NODE_BUDGET)
+    : keyComponents;
+
+  let componentsBlock: string;
+  if (listedComponents.length === 0) {
+    componentsBlock =
+      'KEY COMPONENTS: not provided — identify the most important components from the text yourself.';
+  } else {
+    const bullets = listedComponents.map((c) => `- ${c}`).join('\n');
+    componentsBlock = options.strict
+      ? `KEY COMPONENTS (map these directly to nodes — do NOT add extra nodes):\n${bullets}`
+      : `KEY COMPONENTS (use these as the primary nodes — you may add 1-2 connecting nodes if needed):\n${bullets}`;
+  }
 
   const typeBlock = diagramType
     ? `REQUIRED DIAGRAM TYPE: "${diagramType}" — you MUST use exactly this type.`
     : 'DIAGRAM TYPE: choose the most appropriate of "flow", "relationship", "architecture", "sequence".';
 
   const errorBlock = options.validationError
-    ? `\nYOUR PREVIOUS ATTEMPT WAS REJECTED BY THE VALIDATOR. Fix these EXACT problems:\n${options.validationError}\nDo not repeat these mistakes.\n`
+    ? `\nYOUR PREVIOUS ATTEMPT WAS REJECTED BY THE VALIDATOR. Fix these EXACT problems:\n${options.validationError}\nDo not repeat these mistakes.\nKeep the same conceptual structure as your previous attempt — the same topic and essentially the same components. Make the smallest changes that satisfy the validator (shorten a label, drop or reconnect an edge, merge a redundant node); do NOT redesign the diagram or switch to unrelated components.\n`
     : '';
 
   const taskLine = options.strict

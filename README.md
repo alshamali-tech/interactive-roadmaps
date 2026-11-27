@@ -51,7 +51,7 @@ Turn any article, documentation page, or roadmap into a personalized interactive
 
 ### 🏭 MCP-Powered Content Engine (For Maintainers)
 - **Cyborg Workflow** — We use the **Model Context Protocol (MCP)** to connect local AI agents (like Qwen/Claude Desktop) directly to the filesystem.
-- **Automated Drafting** — The AI reads `MCP_INSTRUCTIONS.md`, drafts lessons, runs Zod validation via terminal, and appends them to module bundles. Zero custom CLI scripts to maintain.
+- **Automated Drafting** — The AI reads `docs/MCP_INSTRUCTIONS.md`, drafts lessons, validates them against the Zod schemas through the terminal, and appends them to module bundles. No custom CLI scripts to maintain.
 
 ---
 
@@ -88,8 +88,8 @@ src/
 ├── hooks/             # Custom React hooks (useAIStream, useAIContext)
 └── pages/             # Route components (Lesson, Home, CourseGenerator)
 
-_deprecated_widgets/   # Graveyard for old widgets (e.g., free-form NodeGraph)
-MCP_INSTRUCTIONS.md    # The "Brain" file for the MCP Content Factory
+_deprecated_widgets/   # Graveyard for old widgets (e.g., the free-form DiagramWidget)
+docs/MCP_INSTRUCTIONS.md # The "Brain" file for the MCP Content Factory
 ```
 
 ---
@@ -227,7 +227,7 @@ If you see "Cannot connect to AI" or CORS errors:
 - [ ] **Context Summary Manager:** Pass structured metadata between stages to prevent repetition.
 - [ ] **Model Capability Detection:** Adapt stage count and widget complexity based on weak vs strong models.
 - [ ] **MCP Integration:** Finalize `MCP_INSTRUCTIONS.md` for local AI agents to draft static content.
-- [ ] **Context Diagram Widget:** Finalize the AI-generated visual flow widget (replacing NodeGraph).
+- [x] **Context Diagram Widget:** AI-generated, read-only React Flow diagram (Zod schema, staged prompts, auto-layout, parser registration and tests) — replaces the free-form diagram widget in `_deprecated_widgets/`.
 
 ### 🔴 Phase 7: Production Hardening
 - [ ] Mobile responsiveness polish (especially for Monaco Editor fallbacks)
