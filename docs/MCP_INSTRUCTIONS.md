@@ -14,7 +14,7 @@ You are an expert Technical Curriculum Designer and Senior AI Engineer. Your rol
 ## 📜 CRITICAL RULES (READ BEFORE GENERATING)
 
 1.  **NEVER OVERWRITE EXISTING LESSONS.** You may ONLY append new lesson objects to the `lessons` array in a module file. Always read the existing file first.
-2.  **ALWAYS VALIDATE.** Before writing any generated content to a module file, you MUST write it to a temporary JSON file and validate it against the Zod schemas, fixing every error before committing. ⚠️ **`npm run validate:lesson` is NOT currently defined in `package.json`** (and there is no `scripts/` directory) — do not report success from it. Until that script exists, validate with the installed test runner, e.g. a throwaway `temp/validate.test.ts` that imports `GeneratedLessonSchema` / `WidgetConfigSchema` / `DiagramSchema` from `src/engine/generatorSchema.ts` and asserts `safeParse(...).success`, run via `npx vitest run temp/validate.test.ts`, then delete the temp files.
+2.  **ALWAYS VALIDATE.** Before writing any generated content to a module file, validate it against the Zod schemas and fix every error. Run `npx vitest run src/engine/contentValidation.test.ts` — it globs every module under `src/content/`, parses each widget with `WidgetConfigSchema`, checks each `context-diagram` against `DiagramSchema`, and reports any `{{widget:id}}` marker that has no matching widget (or vice versa). For a draft not yet appended to a module, put it in a temporary `src/content/**` file so the glob picks it up, then delete it. There is intentionally **no `validate:lesson` npm script** — the repo keeps zero custom CLI scripts, and plain `node` cannot resolve this project's extensionless TypeScript imports or `@` alias, so Vite's test runner is the validation entry point.
 3.  **USE WIDGET MARKERS, NOT RAW JSON.** In your markdown output, use `:::widget <type>` blocks (the marker is the bare type name after `:::widget`, with no braces or attributes). The platform's parser converts these into the final JSON structure. Do NOT embed raw JSON objects directly in the markdown text.
 4.  **RESPECT THE DAG.** Check `src/curriculum/graph.ts` for prerequisites. A lesson cannot reference concepts taught in lessons that aren't listed as prerequisites or earlier in the same module.
 5.  **NO HALLUCINATED WIDGETS.** Only use widget types explicitly defined in the Widget Catalog below. Do not invent new widget types.
@@ -114,7 +114,7 @@ Options are **flat prefixed keys**, not a JSON array: `optionA_*` / `optionB_*`.
 - **Decision nodes** must have at least 2 outgoing edges.
 - **No orphan nodes** — every node must connect to at least one edge.
 - **One connected graph** — a pair of nodes linked to each other but not to the rest is still rejected as disconnected, even though no node is an orphan.
-- **Omit `color`, `icon`, `style` and `animated`.** They are accepted but the renderer styles each node type itself, and a malformed value (e.g. `"color": "blue"`) invalidates the entire diagram with no automatic repair.
+- **`color` and `icon` are optional emphasis** — each node type already renders with its own colour and icon, so omit them unless they add meaning. When present they ARE honoured: `color` must be hex (`#3b82f6`); `icon` must be a supported Lucide name in kebab-case or PascalCase (`shield`, `hard-drive`), and an unrecognised name falls back to the node type's icon rather than failing. `style` and `animated` apply to edges. A malformed **format** (e.g. `"color": "blue"`) still invalidates the whole diagram with no automatic repair.
 - A block whose JSON fails validation is dropped and logged as a warning, so re-check the rendered widget count after authoring.
 
 ### 5. SocraticChat (AI-Powered Chat — Tutor, Interview & Challenge Modes)
@@ -216,7 +216,7 @@ When asked to generate lessons, follow this exact sequence:
 2.  **Read Existing Content:** Read the target module file (`src/content/[track]/[module].ts`) to understand existing lessons and avoid duplication.
 3.  **Draft Content:** Generate markdown following the WHAT→WHY→HOW structure with embedded widget markers.
 4.  **Write Temp File:** Save the draft as `temp_lesson_[id].json` in the project root.
-5.  **Validate:** `npm run validate:lesson` does not exist yet (see rule 2) — validate with a temporary `npx vitest run temp/validate.test.ts` that asserts `GeneratedLessonSchema.safeParse(...).success`, or with the script once it is added.
+5.  **Validate:** Run `npx vitest run src/engine/contentValidation.test.ts` (temporarily place the draft under `src/content/` so the glob can see it).
 6.  **Fix & Re-validate:** If validation fails, read the Zod error, fix the JSON/markdown, and re-run validation. Repeat until ✅ VALID.
 7.  **Append to Module:** Read the target module file, parse the existing `lessons` array, append the validated lesson object, and write the updated file back.
 8.  **Cleanup:** Delete the temporary JSON file.

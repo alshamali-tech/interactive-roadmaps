@@ -60,6 +60,25 @@ import {
   X,
   ChevronDown,
   AlertTriangle,
+  Server,
+  Layers,
+  Globe,
+  Box,
+  FileText,
+  HardDrive,
+  Shield,
+  Zap,
+  GitBranch,
+  Workflow,
+  Cpu,
+  Network,
+  Lock,
+  Key,
+  Search,
+  Send,
+  Users,
+  Bot,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Diagram, DiagramNode, DiagramNodeType } from '@/engine/generatorSchema';
@@ -88,7 +107,9 @@ function useMediaQuery(query: string): boolean {
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
     const media = window.matchMedia(query);
-    setMatches(media.matches);
+    // No synchronous setMatches here: the lazy useState initializer above already
+    // read the current value at first render, and re-setting it in the effect body
+    // only causes a second render for the same answer (react-hooks/set-state-in-effect).
     const listener = () => setMatches(media.matches);
     media.addEventListener('change', listener);
     return () => media.removeEventListener('change', listener);
@@ -102,6 +123,10 @@ function useMediaQuery(query: string): boolean {
 type CustomNodeData = {
   label: string;
   description?: string;
+  /** Authored hex colour override (W1.2 schema). */
+  color?: string;
+  /** Authored Lucide icon name; falls back to the node type's icon. */
+  icon?: string;
   /** Stagger index for the fade-in animation (100ms steps). */
   index: number;
   onClick: () => void;
@@ -143,9 +168,79 @@ const nodeIconNames: Record<DiagramNodeType, string> = {
   service: 'cloud',
 };
 
+/**
+ * Curated registry for node-authored `icon` names.
+ *
+ * Deliberately a fixed list rather than lucide-react's full set: the package
+ * tree-shakes per named export, so accepting arbitrary names would mean bundling
+ * every icon to serve one optional field. An unknown name falls back to the node
+ * type's icon, so a hallucinated value degrades appearance only — never a crash.
+ */
+const iconRegistry: Record<string, React.ComponentType<{ className?: string }>> = {
+  'arrow-down-to-line': ArrowDownToLine,
+  settings: Settings,
+  'help-circle': HelpCircle,
+  'arrow-up-from-line': ArrowUpFromLine,
+  database: Database,
+  cloud: Cloud,
+  server: Server,
+  layers: Layers,
+  globe: Globe,
+  box: Box,
+  'file-text': FileText,
+  'hard-drive': HardDrive,
+  shield: Shield,
+  zap: Zap,
+  'git-branch': GitBranch,
+  workflow: Workflow,
+  cpu: Cpu,
+  network: Network,
+  lock: Lock,
+  key: Key,
+  search: Search,
+  send: Send,
+  users: Users,
+  bot: Bot,
+  terminal: Terminal,
+};
+
+/** DiagramNodeSchema allows kebab-case or PascalCase; registry keys are kebab-case. */
+function normalizeIconName(name: string): string {
+  return name
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase();
+}
+
+/** Resolves an authored icon, falling back to the node type's default. */
+function resolveIcon(
+  nodeType: DiagramNodeType,
+  iconName?: string
+): { Icon: React.ComponentType<{ className?: string }>; name: string } {
+  const key = iconName ? normalizeIconName(iconName) : '';
+  const custom = key ? iconRegistry[key] : undefined;
+  if (custom) return { Icon: custom, name: key };
+  return {
+    Icon: nodeIcons[nodeType] ?? Settings,
+    name: nodeIconNames[nodeType] ?? 'settings',
+  };
+}
+
+/**
+ * Hex override for authored colours. The fill uses color-mix so a strong hex
+ * tints the node instead of replacing it and destroying label contrast.
+ */
+function colorOverrides(color?: string): React.CSSProperties {
+  if (!color) return {};
+  return {
+    borderColor: color,
+    backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
+  };
+}
+
 function DiagramNodeComponent({ data, type }: NodeProps<CustomNode>) {
   const nodeType = (type ?? 'process') as DiagramNodeType;
-  const Icon = nodeIcons[nodeType] ?? Settings;
+  const { Icon, name: iconName } = resolveIcon(nodeType, data.icon);
   const style = nodeStyles[nodeType] ?? nodeStyles.process;
 
   const isDecision = nodeType === 'decision';
@@ -154,7 +249,8 @@ function DiagramNodeComponent({ data, type }: NodeProps<CustomNode>) {
   return (
     <div
       data-node-type={nodeType}
-      data-icon={nodeIconNames[nodeType] ?? 'settings'}
+      data-icon={iconName}
+      data-color={data.color}
       role="button"
       tabIndex={0}
       aria-label={data.label}
@@ -163,8 +259,8 @@ function DiagramNodeComponent({ data, type }: NodeProps<CustomNode>) {
         style,
         isDecision ? 'rotate-45 w-28 h-28 rounded-none' : 'px-4 py-3 rounded-lg min-w-[150px]'
       )}
-      style={
-        isService
+      style={{
+        ...(isService
           ? {
               clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
               width: '160px',
@@ -172,8 +268,9 @@ function DiagramNodeComponent({ data, type }: NodeProps<CustomNode>) {
               paddingLeft: '20px',
               paddingRight: '20px',
             }
-          : {}
-      }
+          : {}),
+        ...colorOverrides(data.color),
+      }}
       onClick={data.onClick}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -266,8 +363,16 @@ export function ContextDiagram(props: ContextDiagramProps) {
 
 function ContextDiagramInner({ diagram, onExplainThisDiagram }: ContextDiagramProps) {
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const [selectedNode, setSelectedNode] = useState<DiagramNode | null>(null);
-  const [edgesVisible, setEdgesVisible] = useState(false);
+  // Selection is keyed by diagram identity, so swapping the diagram drops the
+  // open detail without needing a reset effect (react-hooks/set-state-in-effect).
+  const [selection, setSelection] = useState<{ diagram: Diagram; node: DiagramNode } | null>(
+    null
+  );
+  const selectedNode = selection?.diagram === diagram ? selection.node : null;
+  // Same trick for the edge reveal: the timer is the only write, and "not yet
+  // revealed for this diagram" is derived rather than reset in an effect body.
+  const [revealedFor, setRevealedFor] = useState<Diagram | null>(null);
+  const edgesVisible = revealedFor === diagram;
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const isValidShape =
@@ -287,10 +392,12 @@ function ContextDiagramInner({ diagram, onExplainThisDiagram }: ContextDiagramPr
       data: {
         label: n.label,
         description: n.description,
+        color: n.color,
+        icon: n.icon,
         index,
         onClick: () => {
           const original = diagram.nodes.find((nd) => nd.id === n.id);
-          if (original?.description) setSelectedNode(original);
+          if (original?.description) setSelection({ diagram, node: original });
         },
       },
     }));
@@ -320,30 +427,24 @@ function ContextDiagramInner({ diagram, onExplainThisDiagram }: ContextDiagramPr
     }));
   }, [diagram, isValidShape]);
 
-  // Edges animate in AFTER the staggered node fade-in (100ms per node).
+  // Edges reveal AFTER the staggered node fade-in (100ms per node).
   useEffect(() => {
-    setEdgesVisible(false);
     if (nodeCount === 0) return;
     const revealDelay = Math.min(nodeCount * 100 + 350, 1500);
-    const timer = setTimeout(() => setEdgesVisible(true), revealDelay);
+    const timer = setTimeout(() => setRevealedFor(diagram), revealDelay);
     return () => clearTimeout(timer);
   }, [diagram, nodeCount]);
-
-  // Reset the open detail when the diagram itself changes.
-  useEffect(() => {
-    setSelectedNode(null);
-  }, [diagram]);
 
   // Dismiss the detail popover on outside click or Escape.
   useEffect(() => {
     if (!selectedNode) return;
     const handleMouseDown = (event: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(event.target as HTMLElement)) {
-        setSelectedNode(null);
+        setSelection(null);
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedNode(null);
+      if (event.key === 'Escape') setSelection(null);
     };
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('keydown', handleKeyDown);
@@ -387,13 +488,13 @@ function ContextDiagramInner({ diagram, onExplainThisDiagram }: ContextDiagramPr
           <div className="flex items-start justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">
               {(() => {
-                const Icon = nodeIcons[selectedNode.type] ?? Settings;
+                const { Icon } = resolveIcon(selectedNode.type, selectedNode.icon);
                 return <Icon className="size-4 text-primary" />;
               })()}
               <h3 className="font-semibold text-sm text-foreground">{selectedNode.label}</h3>
             </div>
             <button
-              onClick={() => setSelectedNode(null)}
+              onClick={() => setSelection(null)}
               className="text-muted-foreground hover:text-foreground transition-colors"
               aria-label="Close details"
             >
@@ -422,7 +523,7 @@ function ContextDiagramInner({ diagram, onExplainThisDiagram }: ContextDiagramPr
             const originalNode = diagram.nodes.find((n) => n.id === node.id);
             const outEdges = diagram.edges.filter((e) => e.from === node.id);
             const nodeType = (originalNode?.type ?? 'process') as DiagramNodeType;
-            const Icon = nodeIcons[nodeType] ?? Settings;
+            const { Icon, name: iconName } = resolveIcon(nodeType, originalNode?.icon);
             const style = nodeStyles[nodeType] ?? nodeStyles.process;
             const hasDescription = !!originalNode?.description;
 
@@ -436,7 +537,8 @@ function ContextDiagramInner({ diagram, onExplainThisDiagram }: ContextDiagramPr
                 <div
                   data-testid="diagram-card"
                   data-node-type={nodeType}
-                  data-icon={nodeIconNames[nodeType] ?? 'settings'}
+                  data-icon={iconName}
+                  data-color={originalNode?.color}
                   role={hasDescription ? 'button' : undefined}
                   tabIndex={hasDescription ? 0 : undefined}
                   className={cn(
@@ -444,11 +546,12 @@ function ContextDiagramInner({ diagram, onExplainThisDiagram }: ContextDiagramPr
                     style,
                     hasDescription && 'cursor-pointer'
                   )}
-                  onClick={() => hasDescription && originalNode && setSelectedNode(originalNode)}
+                  style={colorOverrides(originalNode?.color)}
+                  onClick={() => hasDescription && originalNode && setSelection({ diagram, node: originalNode })}
                   onKeyDown={(event) => {
                     if (hasDescription && originalNode && (event.key === 'Enter' || event.key === ' ')) {
                       event.preventDefault();
-                      setSelectedNode(originalNode);
+                      setSelection({ diagram, node: originalNode });
                     }
                   }}
                 >

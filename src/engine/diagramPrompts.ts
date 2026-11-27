@@ -237,7 +237,7 @@ SIZE AND FIELD CONSTRAINTS (enforced by a strict validator):
 - node "description": optional, max 200 characters — one helpful sentence shown when the learner clicks the node
 - edge "label": optional, max 15 characters (e.g., "Yes", "No", "HTTP", "SQL")
 
-STYLING FIELDS: "color", "icon", "animated" and "style" are accepted but SHOULD BE OMITTED — the renderer styles every node type itself. If you do use one, an invalid format rejects the whole diagram: "color" must be hex (e.g. #3b82f6), "icon" must be letters/digits/hyphens only (e.g. database, arrow-right), "animated" must be true or false. When in doubt, leave them out.
+STYLING FIELDS: every node type already gets its own colour and icon, so "color" and "icon" are OPTIONAL emphasis — OMIT THEM unless they add meaning. They are honoured by the renderer when present ("color" must be hex, e.g. #3b82f6; "icon" must be letters/digits/hyphens, e.g. database, shield, arrow-right). Edge-only fields are "animated" (true/false) and "style". A malformed value in any of them rejects the whole diagram with no automatic repair, so when in doubt, leave them out.
 
 Return this EXACT JSON shape:
 {

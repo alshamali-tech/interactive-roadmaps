@@ -33,6 +33,10 @@ export interface LayoutNode {
   label: string;
   type: DiagramNode['type'];
   description?: string;
+  /** Validated hex colour from the W1.2 schema, carried through for the renderer. */
+  color?: string;
+  /** Authored Lucide icon name (kebab-case or PascalCase); renderer resolves it. */
+  icon?: string;
   position: { x: number; y: number };
 }
 
@@ -553,6 +557,8 @@ function toLayoutNode(node: DiagramNode, x: number, y: number): LayoutNode {
     label: node.label,
     type: node.type,
     description: node.description,
+    color: node.color,
+    icon: node.icon,
     position: { x, y },
   };
 }

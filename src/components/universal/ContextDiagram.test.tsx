@@ -1,14 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { HTMLAttributes, ReactNode } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ContextDiagram } from './ContextDiagram';
 import type { Diagram } from '@/engine/generatorSchema';
 
 // Mock framer-motion to disable animations in tests
+type MotionMockProps = { children?: ReactNode } & Record<string, unknown>;
+
 vi.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    div: ({ children, ...props }: MotionMockProps) => (
+      <div {...(props as HTMLAttributes<HTMLDivElement>)}>{children}</div>
+    ),
   },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
+  AnimatePresence: ({ children }: { children?: ReactNode }) => <>{children}</>,
 }));
 
 // Mock matchMedia for useMediaQuery hook. Tests must opt into a viewport
@@ -37,13 +42,15 @@ class MockResizeObserver {
   disconnect = vi.fn();
 }
 
+const globalScope = globalThis as unknown as { ResizeObserver?: unknown };
+
 beforeEach(() => {
-  (globalThis as any).ResizeObserver = MockResizeObserver;
+  globalScope.ResizeObserver = MockResizeObserver;
   mockViewport(false);
 });
 
 afterEach(() => {
-  delete (globalThis as any).ResizeObserver;
+  delete globalScope.ResizeObserver;
 });
 
 const mockDiagram: Diagram = {
@@ -74,6 +81,34 @@ function clickDesktopNode(label: string): HTMLElement {
 }
 
 describe('ContextDiagram', () => {
+  it('applies authored color and icon overrides from the schema', () => {
+    const styled: Diagram = {
+      type: 'relationship',
+      title: 'Styled Nodes',
+      nodes: [
+        { id: 'shielded', label: 'Auth', type: 'service', color: '#dc2626', icon: 'shield' },
+        // PascalCase is legal in DiagramNodeSchema and must normalize to the registry key.
+        { id: 'stored', label: 'Store', type: 'storage', icon: 'HardDrive' },
+        // Unknown icon names must degrade to the node type's icon, not crash.
+        { id: 'weird', label: 'Weird', type: 'process', icon: 'not-a-real-icon' },
+      ],
+      edges: [
+        { from: 'shielded', to: 'stored' },
+        { from: 'stored', to: 'weird' },
+      ],
+    };
+    const { container } = render(<ContextDiagram diagram={styled} />);
+    const byType = (t: string) =>
+      container.querySelector(`[data-node-type="${t}"]`) as HTMLElement;
+
+    expect(byType('service').getAttribute('data-icon')).toBe('shield');
+    expect(byType('storage').getAttribute('data-icon')).toBe('hard-drive');
+    expect(byType('process').getAttribute('data-icon')).toBe('settings');
+    expect(byType('service').style.borderTopColor).toBe('rgb(220, 38, 38)');
+    // Untyped-by-choice nodes keep the default palette (no inline border).
+    expect(byType('service').getAttribute('data-color')).toBe('#dc2626');
+  });
+
   it('renders the diagram title and type indicator', () => {
     render(<ContextDiagram diagram={mockDiagram} />);
     expect(screen.getByText('Test Flow')).toBeInTheDocument();

@@ -133,13 +133,16 @@ describe('DIAGRAM_EXTRACTION_SYSTEM_PROMPT', () => {
   });
 
   it('gives an explicit policy for the optional styling fields the schema validates', () => {
-    // A malformed "color"/"icon" rejects the entire diagram, and
-    // fixCommonDiagramErrors cannot repair it, so the prompt must address it.
+    // color/icon render per node, animated/style are edge-only. All four are
+    // format-strict, so a hallucinated value rejects the whole diagram — the
+    // retry variant therefore forbids them outright to keep output minimal.
+    expect(DIAGRAM_EXTRACTION_SYSTEM_PROMPT).toMatch(/STYLING FIELDS/);
     for (const prompt of [DIAGRAM_EXTRACTION_SYSTEM_PROMPT, DIAGRAM_EXTRACTION_STRICT_PROMPT]) {
-      expect(prompt).toMatch(/SHOULD BE OMITTED|Do NOT output/);
+      expect(prompt).toMatch(/OMIT THEM|Do NOT output/);
       expect(prompt).toContain('"color"');
       expect(prompt).toContain('"icon"');
     }
+    expect(DIAGRAM_EXTRACTION_STRICT_PROMPT).toMatch(/Do NOT output "color"/);
   });
 
   it('includes the exact JSON shape and few-shot examples', () => {

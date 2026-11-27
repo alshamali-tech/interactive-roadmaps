@@ -706,6 +706,40 @@ describe('calculateDiagramLayout', () => {
     });
   });
 
+  describe('Styling pass-through', () => {
+    it('carries authored color and icon through the layout to the renderer', () => {
+      // Without this the W1.2 optional styling fields are validated, then dropped.
+      const nodes: DiagramNode[] = [
+        { id: 'a', label: 'A', type: 'input', color: '#123456', icon: 'shield' },
+        { id: 'b', label: 'B', type: 'output' },
+      ];
+      const result = calculateDiagramLayout(nodes, [{ from: 'a', to: 'b' }], 'flow');
+      const a = result.nodes.find((n) => n.id === 'a')!;
+      const b = result.nodes.find((n) => n.id === 'b')!;
+
+      expect(a.color).toBe('#123456');
+      expect(a.icon).toBe('shield');
+      expect(b.color).toBeUndefined();
+      expect(b.icon).toBeUndefined();
+    });
+
+    it('preserves styling across the disconnected-component path', () => {
+      const nodes: DiagramNode[] = [
+        { id: 'a1', label: 'A1', type: 'input', color: '#abcdef' },
+        { id: 'a2', label: 'A2', type: 'output' },
+        { id: 'b1', label: 'B1', type: 'service', icon: 'database' },
+        { id: 'b2', label: 'B2', type: 'storage' },
+      ];
+      const edges: DiagramEdge[] = [
+        { from: 'a1', to: 'a2' },
+        { from: 'b1', to: 'b2' },
+      ];
+      const result = calculateDiagramLayout(nodes, edges, 'flow');
+      expect(result.nodes.find((n) => n.id === 'a1')!.color).toBe('#abcdef');
+      expect(result.nodes.find((n) => n.id === 'b1')!.icon).toBe('database');
+    });
+  });
+
   describe('Input immutability', () => {
     it('never mutates the caller node objects', () => {
       const nodes = [makeNode('a', 'input'), makeNode('b', 'output')];

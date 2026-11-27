@@ -72,17 +72,19 @@ Turn any article, documentation page, or roadmap into a personalized interactive
 ```text
 src/
 ├── components/
-│   ├── core/          # SettingsModal, MarkdownRenderer, GenerationProgress
+│   ├── core/          # SettingsModal, MarkdownRenderer, FloatingAITutor
 │   ├── layout/        # Header, Sidebar
 │   └── universal/     # Widget components (Sandbox, Mutator, ContextDiagram, TradeOff, SocraticChat)
 ├── engine/            # Core logic
 │   ├── aiService.ts         # Unified adapter for OpenAI/Groq/Ollama
 │   ├── courseGenerator.ts   # Two-phase generation orchestrator
-│   ├── stagePipeline.ts     # Staged lesson generation engine
+│   ├── diagramGenerator.ts  # Staged diagram pipeline (text → JSON → merge)
+│   ├── diagramPrompts.ts    # Per-stage diagram prompts + retry variants
 │   ├── contextManager.ts    # Cross-stage and cross-lesson concept tracking
 │   ├── lessonParser.ts      # Two-pass parser (markdown + widget markers → JSON)
 │   ├── generatorSchema.ts   # Zod schemas for plans, lessons, and widgets
 │   └── registry.ts          # Universal widget registry
+├── lib/               # Shared helpers (cn, diagramLayout auto-positioning)
 ├── curriculum/        # DAG data model and graph utilities
 ├── data/              # Prompt library, static content
 ├── hooks/             # Custom React hooks (useAIStream, useAIContext)
