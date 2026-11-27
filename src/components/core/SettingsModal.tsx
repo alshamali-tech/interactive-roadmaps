@@ -15,6 +15,11 @@ import {
   type AIProvider,
   type GenerationMode,
 } from '@/engine/settings';
+import {
+  detectModelTierDetailed,
+  getModelTierConfig,
+  type ModelTierSelection,
+} from '@/engine/modelCapability';
 
 interface SettingsModalProps {
   open: boolean;
@@ -29,6 +34,7 @@ interface Draft {
   baseUrl: string;
   model: string;
   generationMode: GenerationMode;
+  modelTierOverride: ModelTierSelection;
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -37,7 +43,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   const [tab, setTab] = useState<Tab>('cloud');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [draft, setDraft] = useState<Draft>({ ...aiSettings });
+  const [draft, setDraft] = useState<Draft>({ modelTierOverride: 'auto', ...aiSettings });
   const [errors, setErrors] = useState<string[]>([]);
 
   const [testStatus, setTestStatus] = useState<
@@ -47,10 +53,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   const firstInputRef = useRef<HTMLInputElement>(null);
 
+  // S6: live capability preview, recomputed from the draft so the user sees the
+  // consequence of a model name before saving.
+  const detectedTier = detectModelTierDetailed(draft.provider, draft.model);
+  const effectiveTier =
+    draft.modelTierOverride === 'auto' ? detectedTier.tier : draft.modelTierOverride;
+  const tierConfig = getModelTierConfig(effectiveTier);
+
   // Reset draft state when modal opens
   useEffect(() => {
     if (open) {
-      setDraft({ ...aiSettings });
+      setDraft({ modelTierOverride: 'auto', ...aiSettings });
       setErrors([]);
       setTestStatus('idle');
       setTestError('');
@@ -448,6 +461,72 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </div>
               </div>
             )}
+
+            {/* Model Capability (S6) — visible in all tabs */}
+            <fieldset className="pt-4 border-t border-border">
+              <legend className="block text-sm font-medium text-foreground mb-1.5">
+                Model Capability
+              </legend>
+              <p className="text-xs text-muted-foreground mb-3">
+                Detected from the model name; it chooses the generation stage count, allowed widgets and retries.
+              </p>
+              <div
+                data-testid="tier-preview"
+                className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs space-y-1"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">
+                    {draft.modelTierOverride === 'auto' ? 'Detected' : 'In use'}
+                  </span>
+                  <span className="font-medium capitalize text-foreground">{effectiveTier}</span>
+                </div>
+                <p className="text-muted-foreground">{detectedTier.reason}</p>
+                <div className="flex items-center justify-between gap-2 pt-1 mt-1 border-t border-border">
+                  <span className="text-muted-foreground">Stages (short / medium / long)</span>
+                  <span className="font-medium text-foreground tabular-nums">
+                    {tierConfig.stageCount.short} / {tierConfig.stageCount.medium} /{' '}
+                    {tierConfig.stageCount.long}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Allowed widgets</span>
+                  <span className="font-medium text-foreground">
+                    {tierConfig.allowedWidgets.length}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Retries · filler stripping</span>
+                  <span className="font-medium text-foreground">
+                    {tierConfig.maxRetries} · {tierConfig.fillerStripping ? 'on' : 'off'}
+                  </span>
+                </div>
+              </div>
+              <label
+                htmlFor="model-tier-override"
+                className="block text-sm font-medium text-foreground mt-3 mb-1"
+              >
+                Override tier
+              </label>
+              <select
+                id="model-tier-override"
+                value={draft.modelTierOverride}
+                onChange={(event) =>
+                  updateDraft({
+                    modelTierOverride: event.target.value as ModelTierSelection,
+                  })
+                }
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+              >
+                <option value="auto">Auto-detect ({detectedTier.tier})</option>
+                <option value="weak">Weak — small local models, gpt-3.5</option>
+                <option value="medium">Medium — 30B-70B local, mini/flash/haiku cloud</option>
+                <option value="strong">Strong — GPT-4 / Claude / Gemini Pro, 100B+</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Override only if auto-detection misjudges your model — unknown names are
+                treated as weak on purpose.
+              </p>
+            </fieldset>
 
             {/* Generation Mode — visible in all tabs */}
             <fieldset className="pt-4 border-t border-border">

@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { ModelTierSelection } from './modelCapability';
 
 export type AIProvider = 'none' | 'openai' | 'groq' | 'ollama';
 
@@ -26,6 +27,12 @@ export interface AISettings {
   baseUrl: string;
   model: string;
   generationMode: GenerationMode;
+  /**
+   * S6 manual override for the capability tier that drives stage count, widget
+   * availability and retries. 'auto' (or absent) uses name-based detection.
+   * Optional so settings payloads persisted before this field still hydrate.
+   */
+  modelTierOverride?: ModelTierSelection;
 }
 
 interface SettingsState {
@@ -62,6 +69,7 @@ export const useSettingsStore = create<SettingsState>()(
         baseUrl: 'http://localhost:11434/v1',
         model: '',
         generationMode: 'focused',
+        modelTierOverride: 'auto',
       },
       isAIConnected: false,
 

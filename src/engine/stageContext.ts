@@ -21,6 +21,10 @@
  */
 
 import type { LessonPlan } from './generatorSchema';
+import type { ModelTier } from './modelCapability';
+
+/** Canonical definition lives in modelCapability.ts (S6). */
+export type { ModelTier };
 
 /** The eight generation stages defined by the Sprint 2 spec. */
 export type StageType =
@@ -32,9 +36,6 @@ export type StageType =
   | 'quiz'
   | 'summary'
   | 'review';
-
-/** Declared here because S3's context needs it; S6 will own detection later. */
-export type ModelTier = 'weak' | 'medium' | 'strong';
 
 /** Order stages run in when the caller does not choose them. */
 export const DEFAULT_STAGES: StageType[] = [
