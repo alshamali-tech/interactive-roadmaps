@@ -88,7 +88,6 @@ src/
 ├── hooks/             # Custom React hooks (useAIStream, useAIContext)
 └── pages/             # Route components (Lesson, Home, CourseGenerator)
 
-_deprecated_widgets/   # Graveyard for old widgets (e.g., the free-form DiagramWidget)
 docs/MCP_INSTRUCTIONS.md # The "Brain" file for the MCP Content Factory
 ```
 
@@ -227,7 +226,7 @@ If you see "Cannot connect to AI" or CORS errors:
 - [ ] **Context Summary Manager:** Pass structured metadata between stages to prevent repetition.
 - [ ] **Model Capability Detection:** Adapt stage count and widget complexity based on weak vs strong models.
 - [ ] **MCP Integration:** Finalize `MCP_INSTRUCTIONS.md` for local AI agents to draft static content.
-- [x] **Context Diagram Widget:** AI-generated, read-only React Flow diagram (Zod schema, staged prompts, auto-layout, parser registration and tests) — replaces the free-form diagram widget in `_deprecated_widgets/`.
+- [x] **Context Diagram Widget:** AI-generated, read-only React Flow diagram (Zod schema, staged prompts, auto-layout, parser registration and tests) — replaces the removed free-form DiagramWidget.
 
 ### 🔴 Phase 7: Production Hardening
 - [ ] Mobile responsiveness polish (especially for Monaco Editor fallbacks)
