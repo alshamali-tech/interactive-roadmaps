@@ -45,7 +45,7 @@ Turn any article, documentation page, or roadmap into a personalized interactive
 
 - **Two-Phase Generation** — Interactive Plan Review (user edits the syllabus) → Staged Lesson Generation.
 - **Staged Lesson Generation** — Lessons are generated in atomic stages (Introduction → Motivation → Explanation → Example → Quiz → Summary) to guarantee high quality, even with weak local models.
-- **Concept Registry & Anti-Repetition** — The system tracks concepts across lessons. Lesson 4 will never re-explain what was taught in Lesson 1.
+- **Concept Registry & Anti-Repetition** — `src/engine/stageContext.ts` tracks concepts introduced per stage and per course, word budgets, terminology and an anti-repetition list, and detects re-definitions of known concepts. **Status:** implemented and unit-tested, not yet wired into `courseGenerator.ts` — today's cross-lesson coherence is prompt-level instruction only. It becomes enforced when the staged pipeline (Sprint 2 S1/S9) lands.
 - **Model-Aware Adaptation** — Automatically adjusts stage complexity and widget availability based on whether you are using a weak local model (7B) or a strong cloud model (GPT-4/Claude).
 - **Coherent Context Passing** — Each stage receives a structured context summary of previous stages to ensure narrative flow.
 
@@ -80,7 +80,8 @@ src/
 │   ├── courseGenerator.ts   # Two-phase generation orchestrator
 │   ├── diagramGenerator.ts  # Staged diagram pipeline (text → JSON → merge)
 │   ├── diagramPrompts.ts    # Per-stage diagram prompts + retry variants
-│   ├── contextManager.ts    # Cross-stage and cross-lesson concept tracking
+│   ├── stageContext.ts      # S3 stage/course concept + budget + terminology tracker
+│   ├── contextManager.ts    # Chat context-window trimming for conversations
 │   ├── lessonParser.ts      # Two-pass parser (markdown + widget markers → JSON)
 │   ├── generatorSchema.ts   # Zod schemas for plans, lessons, and widgets
 │   └── registry.ts          # Universal widget registry
