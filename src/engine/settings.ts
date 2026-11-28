@@ -33,6 +33,12 @@ export interface AISettings {
    * Optional so settings payloads persisted before this field still hydrate.
    */
   modelTierOverride?: ModelTierSelection;
+  /**
+   * S9 feature flag: generate lessons through the staged pipeline (S1) instead of
+   * one large prompt. Optional so settings persisted before it still hydrate;
+   * absent means off, which preserves the original single-call behaviour.
+   */
+  useStagedGeneration?: boolean;
 }
 
 interface SettingsState {
@@ -70,6 +76,7 @@ export const useSettingsStore = create<SettingsState>()(
         model: '',
         generationMode: 'focused',
         modelTierOverride: 'auto',
+        useStagedGeneration: false,
       },
       isAIConnected: false,
 

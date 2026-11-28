@@ -33,6 +33,7 @@ import {
   type GeneratedCourse,
 } from './generatorSchema';
 import { parseFocusedLesson } from './lessonParser';
+import { generateLessonStaged, type StagePipelineProgress } from './stagePipeline';
 
 // ───────────────────────────────────────────────────────────────
 // Types
@@ -44,6 +45,11 @@ export interface GenerationProgress {
   totalLessons?: number;
   lessonTitle?: string;
   message: string;
+  /**
+   * Present only when the staged pipeline (S1) is driving generation. The UI
+   * folds these events into per-stage view state; the engine stays UI-free.
+   */
+  staged?: StagePipelineProgress;
 }
 
 export type ProgressCallback = (progress: GenerationProgress) => void;
@@ -57,6 +63,30 @@ export interface GenerateOptions {
   signal?: AbortSignal;
   /** Max retries per stage (default 2) */
   maxRetries?: number;
+  /**
+   * S9 feature flag: generate each lesson through the staged pipeline (S1)
+   * instead of one large prompt. Falls back to the single-call path per lesson
+   * if staging fails. Defaults to `settings.useStagedGeneration`.
+   */
+  staged?: boolean;
+  /** Reuse saved stage context/journal to skip already-completed stages (S8). */
+  resume?: boolean;
+}
+
+/** Options accepted by the lesson-level generation entry points. */
+export interface LessonGenerationOptions {
+  onProgress?: ProgressCallback;
+  signal?: AbortSignal;
+  maxRetries?: number;
+  /** S9 flag override; defaults to `settings.useStagedGeneration`. */
+  staged?: boolean;
+  /** S8: reuse the stage journal to skip completed stages. */
+  resume?: boolean;
+}
+
+/** Whether the staged pipeline should drive generation for this call. */
+function shouldUseStaged(options: { staged?: boolean }, settings: AISettings): boolean {
+  return options.staged ?? settings.useStagedGeneration ?? false;
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -85,6 +115,74 @@ async function withRetry<T>(
     }
   }
   throw lastError;
+}
+
+/**
+ * S9: staged generation for one lesson, with a per-lesson safety net. Aborts
+ * propagate; any other staging failure degrades to the proven single-call path,
+ * so enabling the new pipeline can never lose a lesson.
+ */
+async function generateStagedOrFallback(args: {
+  lessonIndex: number;
+  lessonPlan: LessonPlan;
+  plan: CoursePlan;
+  sourceContent: string;
+  previousLessons: GeneratedLesson[];
+  settings: AISettings;
+  signal?: AbortSignal;
+  onProgress?: ProgressCallback;
+  maxRetries: number;
+  resume?: boolean;
+}): Promise<GeneratedLesson> {
+  try {
+    const result = await generateLessonStaged({
+      lessonPlan: args.lessonPlan,
+      plan: args.plan,
+      lessonIndex: args.lessonIndex,
+      previousLessons: args.previousLessons,
+      sourceContent: args.sourceContent,
+      settings: args.settings,
+      signal: args.signal,
+      maxRetries: args.maxRetries,
+      resume: args.resume,
+      onProgress: (event) =>
+        args.onProgress?.({
+          stage: 'generating-lesson',
+          currentLesson: args.lessonIndex + 1,
+          totalLessons: args.plan.lessons.length,
+          lessonTitle: args.lessonPlan.title,
+          message: event.message,
+          staged: event,
+        }),
+    });
+
+    if (result.warnings.length > 0) {
+      console.warn(
+        `[courseGenerator] staged lesson "${args.lessonPlan.id}" finished with warnings: ${result.warnings.join(' | ')}`
+      );
+    }
+    return result.lesson;
+  } catch (error) {
+    if ((error as { name?: string })?.name === 'AbortError') throw error;
+    console.warn(
+      `[courseGenerator] staged pipeline failed for "${args.lessonPlan.id}" (${
+        error instanceof Error ? error.message : error
+      }) — falling back to single-call generation`
+    );
+    return withRetry(
+      () =>
+        generateSingleLesson(
+          args.sourceContent,
+          args.plan,
+          args.lessonPlan,
+          args.previousLessons,
+          args.settings,
+          args.signal
+        ),
+      args.maxRetries,
+      `lesson-${args.lessonPlan.id}-staged-fallback`
+    );
+  }
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -231,7 +329,7 @@ export async function generateLessonsFromPlan(
   sourceContent: string,
   plan: CoursePlan,
   settings: AISettings,
-  options: { onProgress?: ProgressCallback; signal?: AbortSignal; maxRetries?: number } = {}
+  options: LessonGenerationOptions = {}
 ): Promise<GeneratedCourse> {
   const { onProgress, signal, maxRetries = 2 } = options;
 
@@ -249,19 +347,32 @@ export async function generateLessonsFromPlan(
       message: `Writing lesson ${i + 1} of ${lessonsToGenerate.length}: ${lessonPlan.title}`,
     });
 
-    const lesson = await withRetry(
-      () =>
-        generateSingleLesson(
-          sourceContent,
-          plan,
+    const lesson = shouldUseStaged(options, settings)
+      ? await generateStagedOrFallback({
+          lessonIndex: i,
           lessonPlan,
-          generatedLessons,
+          plan,
+          sourceContent,
+          previousLessons: generatedLessons,
           settings,
-          signal
-        ),
-      maxRetries,
-      `lesson-${lessonPlan.id}`
-    );
+          signal,
+          onProgress,
+          maxRetries,
+          resume: options.resume,
+        })
+      : await withRetry(
+          () =>
+            generateSingleLesson(
+              sourceContent,
+              plan,
+              lessonPlan,
+              generatedLessons,
+              settings,
+              signal
+            ),
+          maxRetries,
+          `lesson-${lessonPlan.id}`
+        );
 
     generatedLessons.push(lesson);
   }

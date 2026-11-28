@@ -44,8 +44,8 @@ Instead of building 100 domain-specific UIs, we built **5 universal interaction 
 Turn any article, documentation page, or roadmap into a personalized interactive course — directly in your browser.
 
 - **Two-Phase Generation** — Interactive Plan Review (user edits the syllabus) → Staged Lesson Generation.
-- **Staged Lesson Generation** — Lessons are generated in atomic stages (Introduction → Motivation → Explanation → Example → Quiz → Summary) to guarantee high quality, even with weak local models.
-- **Concept Registry & Anti-Repetition** — `src/engine/stageContext.ts` tracks concepts introduced per stage and per course, word budgets, terminology and an anti-repetition list, and detects re-definitions of known concepts. **Status:** implemented and unit-tested, not yet wired into `courseGenerator.ts` — today's cross-lesson coherence is prompt-level instruction only. It becomes enforced when the staged pipeline (Sprint 2 S1/S9) lands.
+- **Staged Lesson Generation** — Lessons can be generated in atomic stages (Introduction → Motivation → Explanation → Example → Widgets → Quiz → Summary → Review) with per-stage validation and one retry, so quality holds up even on weak local models. Stage count adapts to the detected model tier (S6). **Status:** implemented and integrated, but opt-in — enable it under Settings → Lesson Generation Pipeline (`useStagedGeneration`); it is off by default and any lesson whose staged run fails falls back automatically to the single-pass generator.
+- **Concept Registry & Anti-Repetition** — `src/engine/stageContext.ts` tracks concepts introduced per stage and per course, word budgets, established terminology and an anti-repetition list; `stageValidators.ts` flags text that re-defines something already taught. **Status:** enforced inside the staged pipeline (opt-in). With the flag off, cross-lesson coherence is still prompt-level instruction only.
 - **Model-Aware Adaptation** — Automatically adjusts stage complexity and widget availability based on whether you are using a weak local model (7B) or a strong cloud model (GPT-4/Claude).
 - **Coherent Context Passing** — Each stage receives a structured context summary of previous stages to ensure narrative flow.
 
@@ -81,6 +81,12 @@ src/
 │   ├── diagramGenerator.ts  # Staged diagram pipeline (text → JSON → merge)
 │   ├── diagramPrompts.ts    # Per-stage diagram prompts + retry variants
 │   ├── stageContext.ts      # S3 stage/course concept + budget + terminology tracker
+│   ├── stagePrompts.ts      # S2 per-stage prompt templates + retry variants
+│   ├── stageValidators.ts   # S4 per-stage output validation (tier-tolerant)
+│   ├── stageAssembler.ts    # S5 merges stage output into a GeneratedLesson
+│   ├── stagePipeline.ts     # S1 staged lesson generation orchestrator
+│   ├── modelCapability.ts   # S6 model tier detection + tier configs
+│   ├── generationHistory.ts # S8 IndexedDB stage journal for resume
 │   ├── contextManager.ts    # Chat context-window trimming for conversations
 │   ├── lessonParser.ts      # Two-pass parser (markdown + widget markers → JSON)
 │   ├── generatorSchema.ts   # Zod schemas for plans, lessons, and widgets
@@ -225,10 +231,10 @@ If you see "Cannot connect to AI" or CORS errors:
 - [x] Coherence context (previous lessons fed into new ones)
 
 ### 🟡 Phase 6: Staged Generation & MCP Content Factory (In Progress)
-- [ ] **Staged Lesson Pipeline:** Break lesson generation into atomic stages (Intro → Motivation → Explain → Example → Quiz → Summary).
-- [ ] **Context Summary Manager:** Pass structured metadata between stages to prevent repetition.
-- [ ] **Model Capability Detection:** Adapt stage count and widget complexity based on weak vs strong models.
-- [ ] **MCP Integration:** Finalize `MCP_INSTRUCTIONS.md` for local AI agents to draft static content.
+- [x] **Staged Lesson Pipeline:** Lesson generation is broken into atomic stages (Intro → Motivation → Explain → Example → Widgets → Quiz → Summary → Review) with per-stage validation, one retry and automatic fallback. Opt-in via Settings while it settles.
+- [x] **Context Summary Manager:** Structured stage context (`stageContext.ts`) carries concepts, terminology, word budget and anti-repetition bans between stages, persisted per lesson.
+- [x] **Model Capability Detection:** `modelCapability.ts` detects weak/medium/strong from provider + model name (with a manual override) and adapts stage count, widget availability, retries and filler stripping.
+- [ ] **MCP Integration:** `docs/MCP_INSTRUCTIONS.md` now teaches the syntax the parser actually accepts and content is validated by `src/engine/contentValidation.test.ts`; still open is the end-to-end authoring workflow for local AI agents.
 - [x] **Context Diagram Widget:** AI-generated, read-only React Flow diagram (Zod schema, staged prompts, auto-layout, parser registration and tests) — replaces the removed free-form DiagramWidget.
 
 ### 🔴 Phase 7: Production Hardening

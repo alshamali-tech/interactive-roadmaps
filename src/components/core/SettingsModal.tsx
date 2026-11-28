@@ -35,6 +35,8 @@ interface Draft {
   model: string;
   generationMode: GenerationMode;
   modelTierOverride: ModelTierSelection;
+  /** Optional so settings persisted before this flag still hydrate. */
+  useStagedGeneration?: boolean;
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -572,6 +574,29 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   </div>
                 </label>
               </div>
+            </fieldset>
+
+            {/* Staged generation (S9 feature flag) */}
+            <fieldset className="pt-4 border-t border-border">
+              <legend className="block text-sm font-medium text-foreground mb-1.5">
+                Lesson Generation Pipeline
+              </legend>
+              <label className="flex items-start gap-2.5 text-sm text-foreground cursor-pointer hover:bg-muted/50 rounded-lg px-3 py-2.5 -mx-1 transition-colors border border-border">
+                <input
+                  type="checkbox"
+                  checked={draft.useStagedGeneration ?? false}
+                  onChange={(event) => updateDraft({ useStagedGeneration: event.target.checked })}
+                  className="accent-primary size-4 mt-0.5"
+                />
+                <div>
+                  <div className="font-medium text-foreground">Staged generation (experimental)</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Builds each lesson in small focused stages with per-stage validation and retry —
+                    designed for weaker local models. If a stage still fails, that lesson falls back
+                    to the single-pass generator so nothing is lost.
+                  </div>
+                </div>
+              </label>
             </fieldset>
 
             {/* Validation Errors */}

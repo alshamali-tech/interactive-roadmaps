@@ -10,6 +10,13 @@ import {
   type GenerationProgress,
 } from '@/engine/courseGenerator';
 import type { CoursePlan, GeneratedLesson, GeneratedCourse } from '@/engine/generatorSchema';
+// The engine already exports a `GenerationProgress` type, so the panel is
+// imported under a distinct name.
+import { GenerationProgress as StageProgressPanel } from '@/components/core/GenerationProgress';
+import { reduceStageStatuses } from '@/components/core/progressStages';
+import { STAGE_LABELS } from '@/engine/stagePrompts';
+import type { StagePipelineProgress } from '@/engine/stagePipeline';
+import type { StageType } from '@/engine/stageContext';
 import {
   Loader2,
   AlertCircle,
@@ -55,6 +62,40 @@ export function CourseGenerator() {
   const [editingTitleValue, setEditingTitleValue] = useState('');
   const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
 
+  // S7: per-stage progress, only populated when the staged pipeline (S1/S9) runs.
+  const [stageEvents, setStageEvents] = useState<StagePipelineProgress[]>([]);
+
+  /**
+   * Forwards engine progress to the UI, keeping the staged event journal for the
+   * current lesson so the stage list can be rebuilt without extra state.
+   */
+  const handleGenerationProgress = (update: GenerationProgress) => {
+    setProgress(update);
+    const staged = update.staged;
+    if (!staged) {
+      // Single-call mode: clear so the fallback path shows its own indicator.
+      setStageEvents((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    setStageEvents((prev) =>
+      prev.length > 0 && prev[0].lessonId !== staged.lessonId
+        ? [staged]
+        : [...prev, staged]
+    );
+  };
+
+  /** Stages for the lesson currently being written, folded into view state. */
+  const stagedView =
+    stageEvents.length > 0
+      ? {
+          stages: reduceStageStatuses([], stageEvents),
+          currentStage:
+            STAGE_LABELS[stageEvents[stageEvents.length - 1].stage as StageType] ??
+            stageEvents[stageEvents.length - 1].stage,
+          percent: stageEvents[stageEvents.length - 1].percent,
+        }
+      : null;
+
   const handleGenerate = async () => {
     setError(null);
     setProgress(null);
@@ -80,7 +121,7 @@ export function CourseGenerator() {
       // Stage 2: Generate Plan
       setState('planning');
       const newPlan = await generateCoursePlan(content, numLessons, aiSettings, {
-        onProgress: setProgress,
+        onProgress: handleGenerationProgress,
       });
 
       setPlan(newPlan);
@@ -100,7 +141,7 @@ export function CourseGenerator() {
     try {
       setState('planning');
       const newPlan = await generateCoursePlan(sourceContent, numLessons, aiSettings, {
-        onProgress: setProgress,
+        onProgress: handleGenerationProgress,
       });
       setPlan(newPlan);
       setState('review-plan');
@@ -118,7 +159,7 @@ export function CourseGenerator() {
     try {
       setState('generating-lessons');
       const course = await generateLessonsFromPlan(sourceContent, plan, aiSettings, {
-        onProgress: setProgress,
+        onProgress: handleGenerationProgress,
       });
 
       setGeneratedLessons(course.lessons);
@@ -144,7 +185,7 @@ export function CourseGenerator() {
         generatedLessons,
         aiSettings,
         {
-          onProgress: setProgress,
+          onProgress: handleGenerationProgress,
         }
       );
 
@@ -539,12 +580,24 @@ export function CourseGenerator() {
       {/* Generating Lessons (Stage 2 running) */}
       {state === 'generating-lessons' && progress && (
         <div className="p-6 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg space-y-4">
-          <ProgressStep
-            label={`Write lessons (${progress.currentLesson ?? 0}/${progress.totalLessons ?? '?'})`}
-            description={progress.message}
-            icon={<PenLine size={18} />}
-            status="active"
-          />
+          {stagedView ? (
+            <StageProgressPanel
+              stages={stagedView.stages}
+              currentStage={stagedView.currentStage}
+              percent={stagedView.percent}
+              lessonTitle={progress.lessonTitle}
+              stageDetails={`Lesson ${progress.currentLesson ?? 1} of ${
+                progress.totalLessons ?? '?'
+              }`}
+            />
+          ) : (
+            <ProgressStep
+              label={`Write lessons (${progress.currentLesson ?? 0}/${progress.totalLessons ?? '?'})`}
+              description={progress.message}
+              icon={<PenLine size={18} />}
+              status="active"
+            />
+          )}
         </div>
       )}
 
