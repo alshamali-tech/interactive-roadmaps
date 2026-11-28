@@ -22,6 +22,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import type { Difficulty } from '@/curriculum/schema';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 export function Home() {
   const navigate = useNavigate();
@@ -32,6 +33,18 @@ export function Home() {
   const displayTracks = trackId
     ? tracks.filter((t) => t.id === trackId)
     : tracks;
+
+  const activeTrack = trackId ? displayTracks[0] : undefined;
+
+  // P3: pages own their document head.
+  usePageMeta({
+    title: activeTrack
+      ? `${activeTrack.title} · Interactive Roadmaps`
+      : 'Interactive Roadmaps — learn engineering by doing',
+    description:
+      activeTrack?.description ??
+      'Free, offline-friendly interactive engineering courses: AI tutor, live sandboxes, broken-code drills, trade-off simulations and diagrams. Bring your own model.',
+  });
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">

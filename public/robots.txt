@@ -1,0 +1,5 @@
+# Matches the `noindex, nofollow` meta tag in index.html.
+# To make the deployment crawlable, change BOTH this file and that meta tag —
+# leaving one of them alone is how a site ends up half-indexed.
+User-agent: *
+Disallow: /

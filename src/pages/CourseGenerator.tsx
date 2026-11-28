@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { extractContentFromUrl, extractContentFromText } from '@/engine/extractor';
 import { saveGeneratedCourse } from '@/engine/localCourses';
 import { useSettingsStore } from '@/engine/settings';
+import { Button } from '@/components/ui/button';
 import {
   generateCoursePlan,
   generateLessonsFromPlan,
@@ -34,6 +36,19 @@ import {
   Pencil,
 } from 'lucide-react';
 
+/**
+ * Per-widget badges for the plan review list. Previously everything that was not
+ * sandbox or mutator fell through to the trade-off scales, so diagrams and chat
+ * widgets were mislabelled. Keys are the canonical hyphenated registry names.
+ */
+const WIDGET_BADGES: Record<string, string> = {
+  sandbox: '🧪',
+  mutator: '🔧',
+  'trade-off': '⚖️',
+  'context-diagram': '🗺️',
+  'socratic-chat': '💬',
+};
+
 type GenState = 'idle' | 'extracting' | 'planning' | 'review-plan' | 'generating-lessons' | 'review-lessons' | 'saving' | 'success' | 'error';
 
 interface GenerationError {
@@ -64,6 +79,46 @@ export function CourseGenerator() {
 
   // S7: per-stage progress, only populated when the staged pipeline (S1/S9) runs.
   const [stageEvents, setStageEvents] = useState<StagePipelineProgress[]>([]);
+
+  // The engine has accepted an AbortSignal all along; the page never passed one,
+  // so generation could not be stopped. This makes cancel actually work.
+  const abortRef = useRef<AbortController | null>(null);
+  const redirectRef = useRef<number | null>(null);
+
+  usePageMeta({
+    title: 'Course Generator · Interactive Roadmaps',
+    description:
+      'Turn any article, documentation page or roadmap into an interactive course with widgets and an AI tutor — generated locally in your browser.',
+  });
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (redirectRef.current !== null) window.clearTimeout(redirectRef.current);
+    };
+  }, []);
+
+  const isAbort = (err: unknown): boolean =>
+    err instanceof Error && err.name === 'AbortError';
+
+  /** Stops the in-flight generation request, if any. */
+  const handleCancel = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  };
+
+  /** Starts a fresh controller and returns its signal for the next engine call. */
+  const beginAbortable = (): AbortSignal => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    return controller.signal;
+  };
+
+  /** Clears the controller once a call finishes normally. */
+  const endAbortable = () => {
+    abortRef.current = null;
+  };
 
   /**
    * Forwards engine progress to the UI, keeping the staged event journal for the
@@ -108,6 +163,7 @@ export function CourseGenerator() {
       return;
     }
 
+    const signal = beginAbortable();
     try {
       // Stage 1: Extract
       setState('extracting');
@@ -116,20 +172,31 @@ export function CourseGenerator() {
           ? await extractContentFromUrl(url)
           : await extractContentFromText(text);
 
+      if (signal.aborted) throw new DOMException('Generation cancelled', 'AbortError');
       setSourceContent(content);
 
       // Stage 2: Generate Plan
       setState('planning');
       const newPlan = await generateCoursePlan(content, numLessons, aiSettings, {
         onProgress: handleGenerationProgress,
+        signal,
       });
 
       setPlan(newPlan);
       setState('review-plan');
+      endAbortable();
     } catch (err: unknown) {
+      if (isAbort(err)) {
+        // A cancel is a normal outcome, not an error — return to a usable state.
+        setState(sourceContent ? 'review-plan' : 'idle');
+        setProgress(null);
+        endAbortable();
+        return;
+      }
       setState('error');
       const message = err instanceof Error ? err.message : 'An unknown error occurred';
       setError({ message });
+      endAbortable();
     }
   };
 
@@ -138,17 +205,27 @@ export function CourseGenerator() {
     setError(null);
     setProgress(null);
 
+    const signal = beginAbortable();
     try {
       setState('planning');
       const newPlan = await generateCoursePlan(sourceContent, numLessons, aiSettings, {
         onProgress: handleGenerationProgress,
+        signal,
       });
       setPlan(newPlan);
       setState('review-plan');
+      endAbortable();
     } catch (err: unknown) {
+      if (isAbort(err)) {
+        setState('review-plan');
+        setProgress(null);
+        endAbortable();
+        return;
+      }
       setState('review-plan');
       const message = err instanceof Error ? err.message : 'An unknown error occurred';
       setError({ message });
+      endAbortable();
     }
   };
 
@@ -156,18 +233,29 @@ export function CourseGenerator() {
     if (!plan || !sourceContent) return;
     setError(null);
 
+    const signal = beginAbortable();
     try {
       setState('generating-lessons');
       const course = await generateLessonsFromPlan(sourceContent, plan, aiSettings, {
         onProgress: handleGenerationProgress,
+        signal,
       });
 
       setGeneratedLessons(course.lessons);
       setState('review-lessons');
+      endAbortable();
     } catch (err: unknown) {
+      if (isAbort(err)) {
+        // Generated lessons up to the cancelled one are kept, not discarded.
+        setState(generatedLessons.length > 0 ? 'review-lessons' : 'review-plan');
+        setProgress(null);
+        endAbortable();
+        return;
+      }
       setState('error');
       const message = err instanceof Error ? err.message : 'An unknown error occurred';
       setError({ message });
+      endAbortable();
     }
   };
 
@@ -177,6 +265,7 @@ export function CourseGenerator() {
     setRegeneratingIndex(lessonIndex);
     setError(null);
 
+    const signal = beginAbortable();
     try {
       const updatedLessons = await regenerateLesson(
         sourceContent,
@@ -186,13 +275,18 @@ export function CourseGenerator() {
         aiSettings,
         {
           onProgress: handleGenerationProgress,
+          signal,
         }
       );
 
       setGeneratedLessons(updatedLessons);
+      endAbortable();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'An unknown error occurred';
-      setError({ message });
+      if (!isAbort(err)) {
+        const message = err instanceof Error ? err.message : 'An unknown error occurred';
+        setError({ message });
+      }
+      endAbortable();
     } finally {
       setRegeneratingIndex(null);
     }
@@ -214,7 +308,8 @@ export function CourseGenerator() {
 
       const courseId = await saveGeneratedCourse(course);
       setState('success');
-      setTimeout(() => navigate(`/course/${courseId}`), 1500);
+      // Cleared on unmount so a cancel cannot navigate a dead component.
+      redirectRef.current = window.setTimeout(() => navigate(`/course/${courseId}`), 1500);
     } catch (err: unknown) {
       setState('review-lessons');
       const message = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -391,13 +486,29 @@ export function CourseGenerator() {
       )}
 
       {/* Planning (Stage 1 running) */}
-      {state === 'planning' && progress && (
-        <div className="p-6 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg flex items-center gap-3">
+      {state === 'planning' && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="p-6 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg flex items-center gap-3"
+        >
           <Loader2 className="animate-spin text-purple-600 dark:text-purple-400" size={24} />
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="font-semibold text-purple-900 dark:text-purple-100">Creating lesson plan...</p>
-            <p className="text-sm text-purple-700 dark:text-purple-300">{progress.message}</p>
+            <p className="text-sm text-purple-700 dark:text-purple-300">
+              {progress?.message ?? 'Asking your model for an outline'}
+            </p>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCancel}
+            className="gap-1.5 shrink-0"
+          >
+            <X size={14} />
+            Cancel
+          </Button>
         </div>
       )}
 
@@ -423,22 +534,24 @@ export function CourseGenerator() {
             </p>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Course Title</label>
+              <label htmlFor="course-plan-title" className="block text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Course Title</label>
               <input
+                id="course-plan-title"
                 type="text"
                 value={plan.title}
                 onChange={(e) => setPlan({ ...plan, title: e.target.value })}
-                className="w-full px-3 py-2 border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-full px-3 py-2 border border-amber-300 dark:border-amber-700 rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
               />
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Description</label>
+              <label htmlFor="course-plan-description" className="block text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Description</label>
               <input
+                id="course-plan-description"
                 type="text"
                 value={plan.description}
                 onChange={(e) => setPlan({ ...plan, description: e.target.value })}
-                className="w-full px-3 py-2 border border-amber-300 dark:border-amber-700 rounded-lg bg-white dark:bg-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-full px-3 py-2 border border-amber-300 dark:border-amber-700 rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
               />
             </div>
           </div>
@@ -508,7 +621,7 @@ export function CourseGenerator() {
                             key={wi}
                             className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
                           >
-                            {ws.type === 'sandbox' ? '🧪' : ws.type === 'mutator' ? '🔧' : '⚖️'}{' '}
+                            {WIDGET_BADGES[ws.type] ?? '🧩'}{' '}
                             {ws.type}
                           </span>
                         ))}
@@ -579,7 +692,11 @@ export function CourseGenerator() {
 
       {/* Generating Lessons (Stage 2 running) */}
       {state === 'generating-lessons' && progress && (
-        <div className="p-6 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg space-y-4">
+        <div
+          role="status"
+          aria-live="polite"
+          className="p-6 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg space-y-4"
+        >
           {stagedView ? (
             <StageProgressPanel
               stages={stagedView.stages}
@@ -598,6 +715,21 @@ export function CourseGenerator() {
               status="active"
             />
           )}
+          <div className="flex items-center justify-between gap-3 pt-1 border-t border-purple-200 dark:border-purple-800">
+            <p className="text-xs text-purple-700 dark:text-purple-300">
+              You can cancel — lessons already written are kept.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCancel}
+              className="gap-1.5 shrink-0"
+            >
+              <X size={14} />
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
 

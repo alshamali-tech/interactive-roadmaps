@@ -472,6 +472,7 @@ export function Sandbox({
                       onClick={() => setShowSettings(false)}
                       className="text-muted-foreground hover:text-foreground"
                       type="button"
+                      aria-label="Close sandbox settings"
                     >
                       <X className="size-3" />
                     </button>

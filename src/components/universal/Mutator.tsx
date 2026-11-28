@@ -347,11 +347,23 @@ export function Mutator({
 
       {/* Reset Confirmation Modal */}
       {showResetConfirm && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-20 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-card border border-border rounded-xl shadow-lg p-6 max-w-sm w-full space-y-4 animate-in zoom-in-95 duration-200">
+        <div
+          className="absolute inset-0 bg-background/80 backdrop-blur-sm z-20 flex items-center justify-center p-4 animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mutator-reset-title"
+        >
+          <div
+            tabIndex={-1}
+            autoFocus
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') handleResetCancel();
+            }}
+            className="bg-card border border-border rounded-xl shadow-lg p-6 max-w-sm w-full space-y-4 animate-in zoom-in-95 duration-200 focus:outline-none"
+          >
             <div className="flex items-center gap-3">
               <AlertTriangle className="size-6 text-amber-500" />
-              <h4 className="text-lg font-semibold">Reset Code?</h4>
+              <h4 id="mutator-reset-title" className="text-lg font-semibold">Reset Code?</h4>
             </div>
             <p className="text-sm text-muted-foreground">
               This will erase all your changes and restore the original broken code. Are you sure?

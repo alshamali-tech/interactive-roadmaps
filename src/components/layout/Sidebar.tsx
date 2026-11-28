@@ -95,6 +95,7 @@ export function Sidebar() {
             to="/"
             className="p-2 rounded-md hover:bg-muted transition-colors"
             title="Home"
+            aria-label="Home"
           >
             <BookOpen className="size-5 text-primary" />
           </NavLink>
@@ -103,6 +104,10 @@ export function Sidebar() {
 
       {/* Full sidebar panel */}
       <aside
+        // On mobile the closed drawer is only translated off-screen, so without
+        // this the whole lesson list stays in the tab order behind the page.
+        inert={!isDesktop && !showSidebar}
+        aria-hidden={!isDesktop && !showSidebar}
         className={cn(
           'w-72 border-r border-border bg-card flex flex-col overflow-y-auto shrink-0',
           'transition-all duration-300 ease-in-out',

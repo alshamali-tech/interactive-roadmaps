@@ -19,15 +19,31 @@ function applyTheme(theme: Theme) {
   }
 }
 
+function readStoredTheme(): Theme {
+  if (typeof window === 'undefined') return 'system';
+  try {
+    const stored = window.localStorage.getItem(THEME_KEY);
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+  } catch {
+    // Safari private mode and blocked-storage contexts throw on access.
+    return 'system';
+  }
+}
+
+function persistTheme(theme: Theme): void {
+  try {
+    window.localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // Losing the preference is better than crashing the header on toggle.
+  }
+}
+
 export function useTheme() {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === 'undefined') return 'system';
-    return (localStorage.getItem(THEME_KEY) as Theme) || 'system';
-  });
+  const [theme, setThemeState] = useState<Theme>(readStoredTheme);
 
   useEffect(() => {
     applyTheme(theme);
-    localStorage.setItem(THEME_KEY, theme);
+    persistTheme(theme);
 
     if (theme !== 'system') return;
     const mql = window.matchMedia('(prefers-color-scheme: dark)');

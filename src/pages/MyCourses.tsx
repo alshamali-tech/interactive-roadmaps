@@ -1,28 +1,44 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAllCustomCourses, deleteCustomCourse } from '@/engine/localCourses';
+import { clearLessonHistory, pruneHistory } from '@/engine/generationHistory';
 import type { CustomCourse } from '@/engine/localCourses';
 import { BookOpen, Clock, Trash2, Plus } from 'lucide-react';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 export function MyCourses() {
   const navigate = useNavigate();
   const [courses, setCourses] = useState<CustomCourse[]>([]);
   const [loading, setLoading] = useState(true);
+  const aliveRef = useRef(true);
 
-  useEffect(() => {
-    loadCourses();
-  }, []);
+  usePageMeta({
+    title: 'My Courses · Interactive Roadmaps',
+    description:
+      'Courses you generated from your own notes, docs and articles — stored locally in this browser, ready offline.',
+  });
 
   const loadCourses = async () => {
     try {
       const allCourses = await getAllCustomCourses();
-      setCourses(allCourses);
+      if (aliveRef.current) setCourses(allCourses);
     } catch (err) {
       console.error('Failed to load courses:', err);
     } finally {
-      setLoading(false);
+      if (aliveRef.current) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    aliveRef.current = true;
+    loadCourses();
+    // Age out abandoned stage journals (S8) — nothing else calls this.
+    void pruneHistory();
+    return () => {
+      aliveRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
+  }, []);
 
   const handleDelete = async (id: string, title: string) => {
     if (!confirm(`Are you sure you want to delete "${title}"?`)) {
@@ -30,6 +46,12 @@ export function MyCourses() {
     }
 
     try {
+      // Delete the S8 stage journal for this course's lessons too — removing only
+      // the course row left those IndexedDB records orphaned permanently.
+      const target = courses.find((c) => c.id === id);
+      if (target) {
+        await Promise.all(target.lessons.map((lesson) => clearLessonHistory(lesson.id)));
+      }
       await deleteCustomCourse(id);
       setCourses(courses.filter((c) => c.id !== id));
     } catch (err) {
@@ -117,6 +139,7 @@ export function MyCourses() {
                     onClick={() => handleDelete(course.id, course.title)}
                     className="py-2 px-3 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors"
                     title="Delete course"
+                    aria-label={`Delete ${course.title}`}
                   >
                     <Trash2 size={16} />
                   </button>

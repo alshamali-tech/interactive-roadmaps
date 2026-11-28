@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Static route map for the SPA. Lesson/course URLs are generated at runtime and
+  cannot be enumerated here, which is the practical limit of SEO for a
+  client-rendered app: crawlers see this shell, not per-lesson content.
+  Publishing real per-lesson pages requires build-time prerendering (see
+  docs/ARCHITECTURE.md).
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://interactive-roadmaps.example.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://interactive-roadmaps.example.com/generate</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://interactive-roadmaps.example.com/my-courses</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+</urlset>

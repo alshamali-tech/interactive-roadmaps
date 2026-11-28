@@ -26,8 +26,10 @@ import {
 } from 'lucide-react';
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { LessonStatus } from '@/engine/progress';
+import type { Diagram } from '@/engine/generatorSchema';
 import { FloatingAITutor } from '@/components/core/FloatingAITutor';
 import { MarkdownRenderer } from '@/components/core/MarkdownRenderer';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { extractSectionTitles } from '@/engine/prompts';
 
 export function Lesson() {
@@ -57,11 +59,49 @@ export function Lesson() {
     if (lesson) break;
   }
 
+  // P3: pages own their document head; Layout deliberately does not set titles.
+  usePageMeta({
+    title: lesson ? `${lesson.title} · Interactive Roadmaps` : 'Lesson · Interactive Roadmaps',
+    description:
+      lesson?.description ??
+      `Practice ${moduleName || 'engineering'} with an AI tutor, live sandboxes and instant feedback.`,
+    type: 'article',
+  });
+
   // ── Derive section titles from the lesson markdown (for roadmap prompt) ─
   const sectionTitles = useMemo(
     () => (lesson ? extractSectionTitles(lesson.content.markdown) : []),
     [lesson]
   );
+
+  // These callbacks are declared before the not-found return below: hooks must
+  // run on every render, and the early return used to skip them.
+  // Called when user clicks a contextual "Ask AI" prompt inside the lesson
+  const handleAskAI = useCallback((sectionTitle: string) => {
+    setPrefilledMessage(
+      `I'm reading the "${sectionTitle}" section. Can you explain the key ideas using a concrete example?`
+    );
+    setAiOpen(true);
+  }, []);
+
+  // Called when a learner clicks "Explain This Diagram" on a context diagram.
+  // Without this prop the button is never rendered by ContextDiagram at all.
+  const handleExplainDiagram = useCallback((diagram: Diagram) => {
+    const nodeNames = diagram.nodes.map((node) => node.label).join(' → ');
+    setPrefilledMessage(
+      `Explain the diagram "${diagram.title}" (${diagram.type}). It shows: ${nodeNames}. ` +
+        `Walk through what happens from start to finish and call out the most important connection.`
+    );
+    setAiOpen(true);
+  }, []);
+
+  const handleAiOpenChange = useCallback((open: boolean) => {
+    setAiOpen(open);
+    if (!open) {
+      // Clear prefilled message once the panel is closed
+      setPrefilledMessage(undefined);
+    }
+  }, []);
 
   if (!lesson) {
     return (
@@ -98,25 +138,6 @@ export function Lesson() {
     parentModule?.lessons.findIndex((l) => l.id === lessonId) ?? -1;
   const prevLesson = lessonIndex > 0 ? parentModule?.lessons[lessonIndex - 1] : undefined;
   const nextLesson = parentModule?.lessons[lessonIndex + 1];
-
-  // Called when user clicks a contextual "Ask AI" prompt inside the lesson
-  const handleAskAI = useCallback((sectionTitle: string) => {
-    setPrefilledMessage(
-      `I'm reading the "${sectionTitle}" section. Can you explain the key ideas using a concrete example?`
-    );
-    setAiOpen(true);
-  }, []);
-
-  const handleAiOpenChange = useCallback(
-    (open: boolean) => {
-      setAiOpen(open);
-      if (!open) {
-        // Clear prefilled message once the panel is closed
-        setPrefilledMessage(undefined);
-      }
-    },
-    []
-  );
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -189,6 +210,7 @@ export function Lesson() {
               widgets={lesson.content.widgets}
               showAITutor={status !== 'locked'}
               onAskAI={handleAskAI}
+              onExplainThisDiagram={handleExplainDiagram}
             />
             {/* IntersectionObserver lives inside this component; it watches
                 rendered [data-section-title] elements and reports the
@@ -366,7 +388,11 @@ function SectionObserver({
   onVisibleSection: (section: string | undefined) => void;
 }) {
   const callbackRef = useRef(onVisibleSection);
-  callbackRef.current = onVisibleSection;
+  // Assigned in an effect: mutating a ref during render is unsafe under
+  // concurrent rendering (the render can be thrown away after the write).
+  useEffect(() => {
+    callbackRef.current = onVisibleSection;
+  }, [onVisibleSection]);
 
   useEffect(() => {
     // Track which sections are currently intersecting + their ratios

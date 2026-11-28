@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getCustomCourseById } from '@/engine/localCourses';
+import { useProgressStore } from '@/engine/progress';
 import type { CustomCourse } from '@/engine/localCourses';
 import { MarkdownRenderer } from '@/components/core/MarkdownRenderer';
 import type { WidgetConfig } from '@/curriculum/schema';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ArrowRight, BookOpen } from 'lucide-react';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 export function CustomCourse() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -13,16 +15,13 @@ export function CustomCourse() {
   const [course, setCourse] = useState<CustomCourse | null>(null);
   const [currentLessonIndex, setCurrentLessonIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (courseId) {
-      loadCourse(courseId);
-    }
-  }, [courseId]);
+  const aliveRef = useRef(true);
+  const { completedLessons, markComplete, markIncomplete } = useProgressStore();
 
   const loadCourse = async (id: string) => {
     try {
       const foundCourse = await getCustomCourseById(id);
+      if (!aliveRef.current) return;
       if (foundCourse) {
         setCourse(foundCourse);
       } else {
@@ -30,11 +29,32 @@ export function CustomCourse() {
       }
     } catch (err) {
       console.error('Failed to load course:', err);
-      navigate('/my-courses');
+      if (aliveRef.current) navigate('/my-courses');
     } finally {
-      setLoading(false);
+      if (aliveRef.current) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    aliveRef.current = true;
+    if (courseId) {
+      loadCourse(courseId);
+    }
+    return () => {
+      aliveRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount + course change
+  }, [courseId]);
+
+  // Course titles come from IndexedDB, so the head can only be set once loaded —
+  // this is why Layout does not own document titles.
+  usePageMeta({
+    title: course ? `${course.title} · Interactive Roadmaps` : 'Course · Interactive Roadmaps',
+    description:
+      course?.description ??
+      'A generated, self-paced course stored locally in your browser with interactive widgets.',
+    type: 'article',
+  });
 
   if (loading) {
     return (
@@ -61,6 +81,12 @@ export function CustomCourse() {
   const currentLesson = course.lessons[currentLessonIndex];
   const isFirstLesson = currentLessonIndex === 0;
   const isLastLesson = currentLessonIndex === course.lessons.length - 1;
+
+  // Generated lessons are also id 'lesson-1', 'lesson-2'… which would collide with
+  // static curriculum lessons in the shared progress store, so keys are namespaced
+  // by course. Without this, finishing a generated course marked static lessons done.
+  const lessonKey = (index: number) => `custom:${courseId}:${course.lessons[index].id}`;
+  const isCompleted = completedLessons.includes(lessonKey(currentLessonIndex));
 
   return (
     <div className="max-w-4xl mx-auto p-8">
@@ -118,20 +144,38 @@ export function CustomCourse() {
           </Button>
         </div>
 
-        {/* Lesson Progress Bar */}
+        {/* Lesson Progress Bar — reflects real completion, not just position */}
         <div className="mt-3 flex gap-1">
           {course.lessons.map((_, index) => (
             <div
-              key={index}
+              key={lessonKey(index)}
+              title={`Lesson ${index + 1}${completedLessons.includes(lessonKey(index)) ? ' (complete)' : ''}`}
               className={`h-1 flex-1 rounded-full transition-colors ${
                 index === currentLessonIndex
                   ? 'bg-primary'
-                  : index < currentLessonIndex
-                  ? 'bg-primary/50'
-                  : 'bg-muted-foreground/20'
+                  : completedLessons.includes(lessonKey(index))
+                    ? 'bg-green-500/70'
+                    : 'bg-muted-foreground/20'
               }`}
             />
           ))}
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            {course.lessons.filter((_, i) => completedLessons.includes(lessonKey(i))).length} of{' '}
+            {course.lessons.length} lessons complete
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant={isCompleted ? 'outline' : 'default'}
+            onClick={() =>
+              isCompleted ? markIncomplete(lessonKey(currentLessonIndex)) : markComplete(lessonKey(currentLessonIndex))
+            }
+          >
+            {isCompleted ? 'Mark incomplete' : 'Mark complete'}
+          </Button>
         </div>
       </div>
 
